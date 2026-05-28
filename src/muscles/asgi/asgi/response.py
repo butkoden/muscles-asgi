@@ -486,7 +486,10 @@ class BadResponse(Response):
                 traceback.print_stack()
                 raise Exception(500, e)
         else:
-            body = codecs.encode("%s\n%s" % (body, "\n".join(trace) if isinstance(trace, list) else trace), encoding='utf-8')
+            if (body is None or body == '') and trace is None:
+                body = codecs.encode("{}", encoding='utf-8')
+            else:
+                body = codecs.encode("%s\n%s" % (body, "\n".join(trace) if isinstance(trace, list) else trace), encoding='utf-8')
         return body
 
     @staticmethod

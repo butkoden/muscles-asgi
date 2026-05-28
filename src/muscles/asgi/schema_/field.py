@@ -1,7 +1,7 @@
 import re
 import json as jsonLib
 from .schema import Schema
-from ..schema.exception import ValidationColumnException
+from .exception import ValidationColumnException
 
 
 class BaseField(Schema):

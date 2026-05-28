@@ -1,7 +1,7 @@
 import io
 from muscles import JsonResponseBody
-from ...src.muscles.asgi.asgi import AsgiStrategy, Request
-from ...src.muscles.asgi.restful import RestApi
+from muscles.asgi.asgi import AsgiStrategy, Request
+from muscles.asgi.restful import RestApi
 from muscles import Context
 from muscles import ApplicationMeta
 from muscles import Configurator
@@ -91,7 +91,7 @@ def test_check_get_1():
             }
         })
 
-        context = Context(WsgiStrategy, {})
+        context = Context(AsgiStrategy, {})
 
         def __init__(self):
             self.api1 = RestApi(
@@ -205,7 +205,7 @@ def test_check_get_1():
             return "CALL TEST 2"
         request.route['handler'] = call_test
 
-    muscular.context.strategy = WsgiStrategy
+    muscular.context.strategy = AsgiStrategy
     app = muscular(environ, start_response)
     for pr in app:
         assert pr == b'CALL TEST 1'
@@ -270,7 +270,7 @@ def test_check_get_2():
             }
         })
 
-        context = Context(WsgiStrategy, {})
+        context = Context(AsgiStrategy, {})
 
         def __init__(self):
             self.api1 = RestApi(
@@ -388,7 +388,7 @@ def test_check_get_2():
             return "CALL TEST 4"
         request.route['handler'] = call_test
 
-    muscular.context.strategy = WsgiStrategy
+    muscular.context.strategy = AsgiStrategy
 
     app = muscular(environ, start_response)
     for pr in app:
@@ -454,7 +454,7 @@ def test_check_get_3():
             }
         })
 
-        context = Context(WsgiStrategy, {})
+        context = Context(AsgiStrategy, {})
 
         def __init__(self):
             self.api1 = RestApi(
@@ -560,7 +560,7 @@ def test_check_get_3():
     def init_request(request):
         request.actor = 1
 
-    muscular.context.strategy = WsgiStrategy
+    muscular.context.strategy = AsgiStrategy
 
     app = muscular(environ, start_response)
     for pr in app:
