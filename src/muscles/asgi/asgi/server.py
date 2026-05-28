@@ -1,7 +1,8 @@
 import os
 import io
 import traceback
-from pprint import pprint
+import inspect
+import logging
 
 from muscles.core import NotFoundException, ApplicationException, ErrorException
 from muscles.core import AttributeErrorException
@@ -80,19 +81,15 @@ class AsgiTransport(Transport):
         :return:
         """
         try:
-            print('response', response)
-            print('self.scope', self.scope)
             if self.scope['type'] == 'lifespan':
                 message = response.request.body
 
                 if message is not None and message['type'] == 'lifespan.startup':
-                    # Выполняем инициализацию ресурсов
-                    print("STARTUP")
+                    self.server.logger.debug("ASGI lifespan startup")
                     await self.send({"type": "lifespan.startup.complete"})
 
                 elif message is not None and message['type'] == 'lifespan.shutdown':
-                    # Освобождаем ресурсы
-                    print("SHUTDOWN")
+                    self.server.logger.debug("ASGI lifespan shutdown")
                     await self.send({"type": "lifespan.shutdown.complete"})
                     return
 
@@ -104,13 +101,8 @@ class AsgiTransport(Transport):
 
                 # Обработка HTTP-запроса
                 if self.scope['method'] == 'OPTIONS':
-                    # Возвращаем корректные заголовки для CORS
-                    print("HTTP OPTIONS response:", response)
                     response = MakeResponse(response=response)
-                    print("HTTP OPTIONS make_response:", response)
-                    print("HTTP STATUS:", response.status)
-                    print("HTTP HEADERS:", response.headers)
-                    print("HTTP BODY:", response.body)
+                    self.server.logger.debug("ASGI OPTIONS status=%s", response.status)
                     await self.send({
                         'type': 'http.response.start',
                         'status': 204,  # Нет контента
@@ -121,12 +113,8 @@ class AsgiTransport(Transport):
                         'body': b'',
                     })
                 else:
-                    print("HTTP response:", response)
                     response = MakeResponse(response=response)
-                    print("HTTP make_response:", response)
-                    print("HTTP STATUS:", response.status)
-                    print("HTTP HEADERS >:", response.headers)
-                    print("HTTP BODY:", response.body)
+                    self.server.logger.debug("ASGI response status=%s", response.status)
                     await self.send({
                         'type': 'http.response.start',
                         'status': int(response.status),
@@ -143,8 +131,7 @@ class AsgiTransport(Transport):
                 raise Exception('WebSocket not implemented')
 
         except Exception as ae:
-            print(ae)
-            print(traceback.format_tb(ae.__traceback__))
+            self.server.logger.exception("ASGI transport response error")
             raise ApplicationException(status=500, reason=ae, body=traceback.format_tb(ae.__traceback__))
 
     async def make_request(self, scope, receive, send):
@@ -159,12 +146,10 @@ class AsgiTransport(Transport):
             requestMaker = RequestMaker(scope, receive)
             return await requestMaker.make()
         except ApplicationException as ae:
-            print(ae)
-            print(traceback.format_tb(ae.__traceback__))
+            self.server.logger.exception("ASGI request maker error")
             raise ApplicationException(status=500, reason=ae, body=traceback.format_tb(ae.__traceback__))
         except Exception as ae:
-            print(ae)
-            print(traceback.format_tb(ae.__traceback__))
+            self.server.logger.exception("ASGI request build error")
             raise ApplicationException(status=500, reason=ae, body=traceback.format_tb(ae.__traceback__))
 
 
@@ -178,10 +163,13 @@ class AsgiServer:
     __host = 'localhost'
     __port = 80
 
-    def __init__(self, host, port, error_handler):
+    def __init__(self, host, port, error_handler, logger=None, debug=False):
         self.__host = host
         self.__port = port
         self.__error_handler = error_handler
+        self.logger = logger or logging.getLogger("muscles.asgi")
+        self.debug = debug
+        self._route_cache = {}
 
         self.__transport = self.__transport_class()
         self.__transport.init_server(self)
@@ -206,8 +194,7 @@ class AsgiServer:
         try:
             return self.__transport.execute(*args, **kwargs)
         except Exception as ex:
-            print("Error: ", ex)
-            print(traceback.format_tb(ex.__traceback__))
+            self.logger.exception("ASGI execute error")
             return self.send_error(ex)
 
     async def handler(self, request):
@@ -246,34 +233,43 @@ class AsgiServer:
                             resp = BaseResponse(status=200, body=resp, request=request)
                         return await self.__transport.make_response(resp)
 
-            for key, instance in itinerary.instance_list():
-                call, dictionary = instance.get_current_route(request)
+            route_key = (
+                request.path,
+                request.method.lower() if request.method else "",
+                (request.content_type or "").lower(),
+            )
+            cached_instance = self._route_cache.get(route_key)
+            if cached_instance is not None:
+                call, dictionary = cached_instance.get_current_route(request)
                 if call:
                     request.route = call
-                    request.itinerary = instance
-                    if 'instance' in call.keys():
-                        for func in call['instance'].get_event('before_request'):
-                            func(request)
-                    break
+                    request.itinerary = cached_instance
+            if request.route is None:
+                for _, instance in itinerary.instance_list():
+                    call, dictionary = instance.get_current_route(request)
+                    if call:
+                        request.route = call
+                        request.itinerary = instance
+                        self._route_cache[route_key] = instance
+                        break
+            if request.route and 'instance' in request.route.keys():
+                for func in request.route['instance'].get_event('before_request'):
+                    func(request)
 
         except ErrorException as ae:
-            print(ae)
-            print(traceback.format_tb(ae.__traceback__))
+            self.logger.exception("ASGI route resolution error")
             ae.body = traceback.format_tb(ae.__traceback__)
             return await self.send_error(ae, request)
         except ImportError as ae:
-            print(ae)
-            print(traceback.format_tb(ae.__traceback__))
+            self.logger.exception("ASGI import error")
             ae = ApplicationException(status=500, reason=ae, body=traceback.format_tb(ae.__traceback__))
             return await self.send_error(ae, request)
         except KeyError as ae:
-            print(ae)
-            print(traceback.format_tb(ae.__traceback__))
+            self.logger.exception("ASGI key error")
             ae = ApplicationException(status=500, reason=ae, body=traceback.format_tb(ae.__traceback__))
             return await self.send_error(ae, request)
         except Exception as ae:
-            print(ae)
-            print(traceback.format_tb(ae.__traceback__))
+            self.logger.exception("ASGI unexpected route error")
             ae = ApplicationException(status=500, reason=ae, body=traceback.format_tb(ae.__traceback__))
             return await self.send_error(ae, request)
 
@@ -287,6 +283,8 @@ class AsgiServer:
                                                         **dictionary)
                     else:
                         resp = request.route['handler'](request=request, **dictionary)
+                    if inspect.isawaitable(resp):
+                        resp = await resp
                     if not isinstance(resp, BaseResponse) and isinstance(resp, str):
                         resp = BaseResponse(status=200, body=resp, request=request)
                     elif not isinstance(resp, BaseResponse) and isinstance(resp, bytes):
@@ -315,28 +313,23 @@ class AsgiServer:
 
                     return await self.__transport.make_response(resp)
                 except ApplicationException as ae:
-                    print(ae)
-                    print(traceback.format_tb(ae.__traceback__))
+                    self.logger.exception("ASGI application exception")
                     ae = ApplicationException(status=400, reason=ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
                     return await self.send_error(ae, request)
                 except ErrorException as ae:
-                    print(ae)
-                    print(traceback.format_tb(ae.__traceback__))
+                    self.logger.exception("ASGI error exception")
                     ae = ApplicationException(status=500, reason=ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
                     return await self.send_error(ae, request)
                 except ImportError as ae:
-                    print(ae)
-                    print(traceback.format_tb(ae.__traceback__))
+                    self.logger.exception("ASGI import exception")
                     ae = ApplicationException(status=500, reason=ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
                     return await self.send_error(ae, request)
                 except KeyError as ae:
-                    print(ae)
-                    print(traceback.format_tb(ae.__traceback__))
+                    self.logger.exception("ASGI handler key error")
                     ae = AttributeErrorException(status=500, reason="KeyError[%s]" % ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
                     return await self.send_error(ae, request)
                 except Exception as ae:
-                    print(ae)
-                    print(traceback.format_tb(ae.__traceback__))
+                    self.logger.exception("ASGI handler unexpected exception")
                     ae = ApplicationException(status=500, reason=ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
                     return await self.send_error(ae, request)
         return await self.send_error(NotFoundException(status=404, reason="Not Found"), request)
@@ -373,21 +366,21 @@ class AsgiServer:
         :param request: Объект запроса
         :return:
         """
-        print('================ERROR/send_error>', err)
         try:
             status = err.status if hasattr(err, 'status') else 500
             reason = err.reason if hasattr(err, 'reason') else str(err)
             body = err.body if hasattr(err, 'body') else str(err)
             trace = err.traceback if hasattr(err, 'traceback') else None
         except Exception as e:
-            print("Error while handling error:", e)
+            self.logger.exception("ASGI error serialization failure")
             status = 500
             reason = b'Internal Server Error'
             body = b'Internal Server Error'
             trace = err.traceback if hasattr(err, 'traceback') else None
-        print('================ERROR/status/reason/body>', status, reason)
-        print("\n".join(body) if isinstance(body, list) else body)
-        print("\n".join(trace) if isinstance(trace, list) else trace)
+        self.logger.error("ASGI error status=%s reason=%s", status, reason)
+        if self.debug:
+            self.logger.debug("%s", "\n".join(body) if isinstance(body, list) else body)
+            self.logger.debug("%s", "\n".join(trace) if isinstance(trace, list) else trace)
 
         if issubclass(self.__error_handler, Exception):
             resp = self.__error_handler().handler(status=status, reason=reason, body=body, trace=trace, request=request)
@@ -396,7 +389,7 @@ class AsgiServer:
         # traceback.print_exc(file=sys.stdout)
         # call = routes.get_current_error_handler(resp)
 
-        for key, instance in itinerary.instance_list():
+        for _, instance in itinerary.instance_list():
             call = instance.get_current_error_handler(resp)
             if call:
                 resp.body = call['handler'](resp, request)
