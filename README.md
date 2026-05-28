@@ -1,145 +1,46 @@
-# README: Muscular Framework #
+# Muscles ASGI
 
-```bash
+`muscles-asgi` is the ASGI runtime for Muscles. It mirrors the WSGI API model
+while using ASGI scopes/events for async-capable servers.
 
-pybabel extract --mapping-file=/apps/app/babelrc --keywords=_ --keywords=_l --keywords=t --keywords=locale --output-file=/apps/gitmodules/muscles/locales/message.pot /apps/gitmodules/muscles/src
+## Runtime
 
-pybabel init --domain=message --input-file=/apps/gitmodules/muscles/locales/message.pot --output-dir=/apps/gitmodules/muscles/locales --locale=en
-
-pybabel update --domain=message --input-file=/apps/gitmodules/muscles/locales/message.pot --output-dir=/apps/gitmodules/muscles/locales --locale=en
-
-pybabel compile --domain=message --directory=/apps/gitmodules/muscles/locales
-
-```
-
-### Plans ###
-
-#### Completed ####
-- cli
-- http with wsgi
-- http with server
-- request
-- response
-- redirect
-- header
-- test for wsgi
-- test for http
-- test for cli
-- test for redirect
-- html template
-
-
-#### Must ####
-
-- route with param and alias (main.index)
-- test for abort
-- configuration
-- auto restart
-- documentation
-
-
-### Routers ###
+An app binds `Context` to `AsgiStrategy`:
 
 ```python
-from muscles.http import routes, Response
-
-def http_main(request):
-    body = '<html><head></head><body>'
-    body += f'#HalloMuscularWorld'
-    body += '</body></html>'
-    return body
+from muscles import ApplicationMeta, Configurator, Context
+from muscles.asgi import AsgiStrategy
 
 
-@routes.init('/init', method='GET', content_type='text/html')
-def main_test1(request):
-    body = '<html><head></head><body>'
-    body += f'#init GET'
-    body += '</body></html>'
-    return body
+class App(metaclass=ApplicationMeta):
+    config = Configurator(obj={"main": {"HOST": "0.0.0.0", "PORT": "8080"}})
+    context = Context(AsgiStrategy, {})
 
-
-@routes.init('/init', method='PUT', content_type='application/json')
-def main_test1(request):
-    return [{"init": "PUT"}]
-
-
-@routes.init('/init', method='LINK', redirect='http://localhost:8080/test')
-def main_test1(request):
-    return [{"init": "PUT"}]
-
-
-@routes.init('/init', method='DELETE', redirect=(308, '/test'))
-def main_test1(request):
-    return [{"init": "PUT"}]
-
-
-@routes.init('/init', method='GET', content_type='application/json')
-def main_test1(request):
-    return {"init": "GET"}
-
-
-@routes.init('/init', method='POST')
-def main_test1(request):
-    body = '<html><head></head><body>'
-    body += f'#init POST'
-    body += '</body></html>'
-    return body
-
-
-def http_main(request):
-    body = '<html><head></head><body>'
-    body += f'#HalloMuscularWorld'
-    body += '</body></html>'
-    # await asyncio.sleep(5)
-    # time.sleep(5)
-    return body
-
-
-def http_main1(request):
-    body = '<html><head></head><body>'
-    body += f'#HalloMuscularWorld 111'
-    body += '</body></html>'
-    return Response(200, body=body)
-
-
-def http_main2(request):
-    body = '<html><head></head><body>'
-    body += f'#HalloMuscularWorld 111'
-    body += '</body></html>'
-    headers = [('Star', 1)]
-    return (body, 200, headers)
-
-
-def http_main3(request):
-    body = '<html><head></head><body>'
-    body += f'#HalloMuscularWorld 111'
-    body += '</body></html>'
-    headers = [('Star', 1)]
-    return (body, 404, headers)
-
-
-routes.add('/', http_main, method='GET')
-routes.add('/test', http_main1, method='*')
-routes.add('/test2', http_main2, method='*')
-routes.add('/test3', http_main3, method='*')
-
+    def run(self, *args):
+        return self.context.execute(*args, shutup=True)
 ```
-### How do I get set up? ###
 
-* Summary of set up
-* Configuration
-* Dependencies
-* Database configuration
-* How to run tests
-* Deployment instructions
+The ASGI package shares core schemas, route matching and OpenAPI generation with
+the other runtimes. It should not duplicate core itinerary code.
 
-### Contribution guidelines ###
+## REST API And Swagger
 
-* Writing tests
-* Code review
-* Other guidelines
+`RestApi` controllers/actions are projected into OpenAPI automatically. Generated
+paths include the external API prefix, so a mounted route such as
+`/api/v1/bookings` appears in Swagger exactly as clients must call it.
 
-### Who do I talk to? ###
+More detail: [docs/openapi-and-routing.md](docs/openapi-and-routing.md).
 
-* Repo owner or admin
-* Other community or team contact
+## Request Handling
+
+Request parsing does not require `cgi`, `multipart` or `python-magic` at import
+time. Multipart form data uses the standard library path, and missing MIME
+detection falls back safely.
+
+## Development
+
+Run tests with sibling packages on `PYTHONPATH`:
+
+```bash
+PYTHONPATH=../muscles/src:src python -m pytest -q
+```

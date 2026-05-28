@@ -6,8 +6,8 @@ from muscles import XmlResponseBody
 from muscles import MultipartRequestBody
 from muscles import PathParameter
 from muscles import JsonRequestBody
-from ...src.muscles.asgi.asgi import AsgiStrategy
-from ...src.muscles.asgi.restful import RestApi
+from muscles.asgi.asgi import AsgiStrategy
+from muscles.asgi.restful import RestApi
 from muscles import Context
 from muscles import ApplicationMeta
 from muscles import Configurator

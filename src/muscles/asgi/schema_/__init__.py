@@ -10,11 +10,8 @@ from .parameters import *
 from .swagger import *
 from .group import *
 from .security import *
-from .itinerary import *
 
 __all__ = (
-    "Itinerary",
-    "Node",
     "BaseSecurity",
     "BasicAuthSecurity",
     "ApiKeyAuthSecurity",

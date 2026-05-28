@@ -10,8 +10,8 @@ from muscles import CookieParameter
 from muscles import HeaderParameter
 from muscles import QueryParameter
 from muscles import JsonRequestBody
-from ...src.muscles.asgi.asgi import AsgiStrategy
-from ...src.muscles.wsgi.restful import RestApi
+from muscles.asgi.asgi import AsgiStrategy
+from muscles.asgi.restful import RestApi
 from muscles import Context
 from muscles import ApplicationMeta
 from muscles import Configurator
@@ -68,7 +68,7 @@ class Muscular(metaclass=ApplicationMeta):
         }
     })
 
-    context = Context(WsgiStrategy, {})
+    context = Context(AsgiStrategy, {})
 
     def __init__(self):
         self.api1 = RestApi(
@@ -298,7 +298,7 @@ def test_check_instance():
         'CONTENT_TYPE': 'application/json',
     })
     muscular = Muscular()
-    muscular.context.strategy = WsgiStrategy
+    muscular.context.strategy = AsgiStrategy
     app = muscular(environ, start_response)
     for pr in app:
         assert pr == b'{"method": "GET", "request": {"url": "http://localhost:8080/api/v1/test"}}'
@@ -387,7 +387,7 @@ def test_check_get():
         'CONTENT_TYPE': 'application/json',
     })
     muscular = Muscular()
-    muscular.context.strategy = WsgiStrategy
+    muscular.context.strategy = AsgiStrategy
     app = muscular(environ, start_response)
     for pr in app:
         assert pr == b'{"method": "GET", "request": {"url": "http://localhost:8080/api/v1/test"}}'
@@ -405,7 +405,7 @@ def test_check_post():
         'CONTENT_TYPE': 'application/json',
     })
     muscular = Muscular()
-    muscular.context.strategy = WsgiStrategy
+    muscular.context.strategy = AsgiStrategy
     app = muscular(environ, start_response)
     for pr in app:
         pr = json.loads(pr)
@@ -424,7 +424,7 @@ def test_check_delete():
         'CONTENT_TYPE': 'application/json',
     })
     muscular = Muscular()
-    muscular.context.strategy = WsgiStrategy
+    muscular.context.strategy = AsgiStrategy
     app = muscular(environ, start_response)
     for pr in app:
         assert pr == b'{"method": "DELETE"}'
@@ -442,7 +442,7 @@ def test_check_put():
         'CONTENT_TYPE': 'application/json',
     })
     muscular = Muscular()
-    muscular.context.strategy = WsgiStrategy
+    muscular.context.strategy = AsgiStrategy
     app = muscular(environ, start_response)
     for pr in app:
         assert pr == b'{"method": "PUT"}'
@@ -460,7 +460,7 @@ def test_check_show():
         'CONTENT_TYPE': 'application/json',
     })
     muscular = Muscular()
-    muscular.context.strategy = WsgiStrategy
+    muscular.context.strategy = AsgiStrategy
     app = muscular(environ, start_response)
     for pr in app:
         assert pr == b'{"id": "1", "method": "GET", "request": {"url": "http://localhost:8080/api/v1/test/1"}}'
@@ -478,7 +478,7 @@ def test_check_change():
         'CONTENT_TYPE': 'application/json',
     })
     muscular = Muscular()
-    muscular.context.strategy = WsgiStrategy
+    muscular.context.strategy = AsgiStrategy
     app = muscular(environ, start_response)
     for pr in app:
         assert pr == b'{"id": "1", "method": "POST", "request": {"url": "http://localhost:8080/api/v1/test/1"}}'
@@ -496,7 +496,7 @@ def test_check_drop():
         'CONTENT_TYPE': 'application/json',
     })
     muscular = Muscular()
-    muscular.context.strategy = WsgiStrategy
+    muscular.context.strategy = AsgiStrategy
     app = muscular(environ, start_response)
     for pr in app:
         assert pr == b'{"id": "1", "method": "DELETE", "request": {"url": "http://localhost:8080/api/v1/test/1"}}'

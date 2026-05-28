@@ -296,11 +296,11 @@ class AsgiServer:
                     elif not isinstance(resp, BaseResponse) and isinstance(resp, tuple):
                         kwargs = {}
                         status = 200
-                        if len(resp) >= 0:
-                            kwargs['body'] = resp[0]
                         if len(resp) >= 1:
-                            status = resp[1]
+                            kwargs['body'] = resp[0]
                         if len(resp) >= 2:
+                            status = resp[1]
+                        if len(resp) >= 3:
                             kwargs['headers'] = resp[2]
                         resp = BaseResponse(status=status, request=request, **kwargs)
                     elif not isinstance(resp, BaseResponse):

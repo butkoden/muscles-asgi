@@ -1,10 +1,8 @@
 import asyncio
-import cgi
 import traceback
 import urllib
 from urllib.parse import urlparse, urlunparse, parse_qs
 from operator import itemgetter
-from multipart import MultipartParser
 import re
 
 from muscles.core import Dependency
@@ -13,11 +11,29 @@ from muscles.core import inject
 import json
 import sys
 import email.parser
+import email.policy
 import tempfile
 import os
-import magic
 from http.cookies import SimpleCookie
 from .error_handler import ApplicationException, AttributeException
+
+try:
+    import magic
+except ImportError:
+    magic = None
+
+
+def detect_mime_from_buffer(value):
+    if magic is None:
+        return 'application/octet-stream'
+    try:
+        return magic.Magic(mime=True).from_buffer(value)
+    except ImportError:
+        return 'application/octet-stream'
+
+
+def normalize_mime_type(value):
+    return 'image/jpeg' if value == 'image/jpg' else value
 
 
 def _split_on_find(content, bound):
@@ -123,8 +139,7 @@ class FileStorage:
         self._filename = filename
         self._file_type = file_type
         if mime_type is None:
-            mime = magic.Magic(mime=True)
-            mime_type = mime.from_buffer(self._value)
+            mime_type = detect_mime_from_buffer(self._value)
         self._mime_type = mime_type
         self._bytes_read = bytes_read
 
@@ -242,6 +257,41 @@ class FieldStorage:
 
     def __enter__(self):
         return self
+
+
+def parse_multipart_body(content_type, body, encoding='utf-8'):
+    fields = {}
+    raw_message = (
+        "Content-Type: %s\r\nMIME-Version: 1.0\r\n\r\n" % content_type
+    ).encode(encoding) + body
+    message = email.parser.BytesParser(policy=email.policy.default).parsebytes(raw_message)
+    for part in message.iter_parts():
+        name = part.get_param('name', header='content-disposition')
+        if not name:
+            continue
+        payload = part.get_payload(decode=True) or b''
+        filename = part.get_filename()
+        if filename is not None:
+            content_type = normalize_mime_type(part.get_content_type())
+            value = FileStorage(
+                name,
+                payload,
+                filename=filename,
+                mime_type=content_type,
+                file_type=content_type,
+                bytes_read=len(payload),
+            )
+        else:
+            charset = part.get_content_charset() or encoding
+            value = FieldStorage(name, payload.decode(charset))
+
+        if name in fields:
+            if not isinstance(fields[name], list):
+                fields[name] = [fields[name]]
+            fields[name].append(value)
+        else:
+            fields[name] = value
+    return fields
 
 
 class Request:
@@ -893,8 +943,8 @@ class RequestMaker:
 
     async def make_body_from_raw(self):
         input = await self.make_body_from_buffer()
-        mime = magic.Magic(mime=True)
-        mime_type = mime.from_buffer(input)
+        mime_type = self.headers.get('content-type') or detect_mime_from_buffer(input)
+        mime_type = normalize_mime_type(mime_type.split(';', 1)[0])
         if mime_type not in self.text_mime_types:
             input = FileStorage(None, input,
                                 filename=None,
@@ -930,47 +980,12 @@ class RequestMaker:
                 fields[_data[0]] = FieldStorage(_data[0], _data[1])
         return fields
 
-    async def make_body_from_multipart(self, content_type, body):
+    async def make_body_from_multipart(self):
         """
-        Разбираем данные multipart/form-data с использованием библиотеки python-multipart
+        Разбираем данные multipart/form-data.
         """
-        try:
-            input = await self.make_body_from_buffer()
-            fields = {}
-
-            # Получаем заголовок Content-Type и boundary
-            content_type = self.headers.get('content-type', '')
-            boundary = content_type.split("boundary=")[-1].encode()
-
-            if not boundary:
-                raise ValueError("Boundary не найден в заголовке Content-Type")
-
-            # Создаем MultipartParser для разбора данных
-            parser = MultipartParser(input, boundary)
-
-            # Парсим данные
-            for part in parser:
-                disposition = part.headers.get(b'Content-Disposition', b'').decode('utf-8')
-                if 'filename=' in disposition:
-                    # Если это файл
-                    name = disposition.split('name=')[1].split(';')[0].strip('"')
-                    filename = disposition.split('filename=')[1].strip('"')
-                    fields[name] = {
-                        'filename': filename,
-                        'content_type': part.headers.get(b'Content-Type', b'text/plain').decode('utf-8'),
-                        'content': part.file.read(),
-                        'size': len(part.file.read())
-                    }
-                else:
-                    # Если это обычное поле формы
-                    name = disposition.split('name=')[1].strip('"')
-                    fields[name] = part.file.read().decode('utf-8')
-
-            return fields
-        except Exception as e:
-            print(e)
-            traceback.extract_tb(e.__traceback__)
-            raise
+        input = await self.make_body_from_buffer()
+        return parse_multipart_body(self.headers.get('content-type', ''), input, self.charset)
 
     def make_headers(self) -> dict:
         """
@@ -1036,5 +1051,3 @@ class RequestMaker:
             is_buffer=self.request_type is None
         )
         return request
-
-

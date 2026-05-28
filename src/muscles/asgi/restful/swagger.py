@@ -40,7 +40,7 @@ class Swagger(Schema):
             super().__init__(*args, **kwargs)
             self.prefix = prefix or '/'
             server = '/'.join(list(filter(None, self.prefix.split('/'))))
-            if not server.startswith('http://') or not server.startswith('https://'):
+            if not server.startswith('http://') and not server.startswith('https://'):
                 server = "/{server}".format(server=server)
             self.version = version or '1.0'
             self.title = title
@@ -152,8 +152,9 @@ class Swagger(Schema):
             handler_name = handler.__name__
             if not hasattr(handler, 'node'):
                 continue
-            if handler.node.full_route not in _handlers:
-                _handlers[handler.node.full_route] = {}
+            full_route = self._external_path(handler.node.full_route)
+            if full_route not in _handlers:
+                _handlers[full_route] = {}
             method = handler.method
             if not method and handler_name in self.legal_http_method:
                 method = handler_name
@@ -167,28 +168,35 @@ class Swagger(Schema):
             else:
                 tags = []
 
-            _handlers[handler.node.full_route][method] = {
+            _handlers[full_route][method] = {
                 'tags': tags,
                 'description': handler.description,
                 'summary': handler.summary,
             }
             if len(handler.parameters) > 0:
-                _handlers[handler.node.full_route][method].update({
+                _handlers[full_route][method].update({
                     'parameters': self._dump_paths_parameters(handler)
                 })
             if hasattr(handler, 'response') and len(handler.response) > 0:
-                _handlers[handler.node.full_route][method].update({
+                _handlers[full_route][method].update({
                     'responses': self._dump_paths_response(handler)
                 })
             if hasattr(handler, 'request') and len(handler.request) > 0:
-                _handlers[handler.node.full_route][method].update({
+                _handlers[full_route][method].update({
                     'requestBody': self._dump_paths_request(handler)
                 })
             if hasattr(handler, 'security') and len(handler.security) > 0:
-                _handlers[handler.node.full_route][method].update({
+                _handlers[full_route][method].update({
                     'security': self._dump_security(handler.security)
                 })
         return _handlers
+
+    def _external_path(self, path):
+        prefix = '/' + '/'.join(list(filter(None, self.prefix.split('/'))))
+        route = '/' + '/'.join(list(filter(None, path.split('/'))))
+        if prefix != '/' and not route.startswith(prefix + '/') and route != prefix:
+            route = prefix + route
+        return route
 
     def _dump_paths_parameters(self, handler):
         parameters = []
