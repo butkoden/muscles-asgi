@@ -233,14 +233,19 @@ class Swagger(Schema):
         return responses
 
     def __call__(self, *args, handler=None, node=None, model: Model = None, tags: list = None, description: str = None,
-                 summary: str = None, request: list = [], security: list = [], response: list = [],
-                 parameters: list = [], **kwargs):
+                 summary: str = None, request: list = None, security: list = None, response: list = None,
+                 parameters: list = None, **kwargs):
         """
         Устанавливает схему для метода. Позволяет указать базовые правила работы апи.
 
         :param model: Модель данных
         :return:
         """
+        request = request or []
+        security = security or []
+        response = response or []
+        parameters = parameters or []
+
         if inspect.isclass(handler):
             handler.actions = []
             for name in list(handler.__dict__):

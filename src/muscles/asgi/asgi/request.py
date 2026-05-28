@@ -77,7 +77,7 @@ class BodyPart(object):
             raise ImproperBodyPartContentException(
                 'content does not contain CR-LF-CR-LF'
             )
-        self.headers = headers
+        self.headers = headers or {}
         self._name = None
         self._filename = None
         for k, v in self.headers:
@@ -309,7 +309,7 @@ class Request:
                  method: tuple = None,
                  server: tuple = None,
                  remote_addr: tuple = None,
-                 headers: dict = {},
+                 headers: dict = None,
                  body=None,
                  is_json=False,
                  is_xml=False,
@@ -349,7 +349,7 @@ class Request:
         #: for unix sockets, or ``None`` if not known.
         self.server = server
         #: The headers received with the request.
-        self.headers = headers
+        self.headers = headers or {}
         #: The address of the client sending the request.
         self.remote_addr = remote_addr
 
