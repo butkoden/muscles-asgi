@@ -221,7 +221,7 @@ class AsgiServer:
             return await self.send_error(request.exception, request)
         static = routes.get_current_static(request)
         if static:
-            return self.handle_static(static, request)
+            return await self.handle_static(static, request)
         else:
             return await self.handle_request(request)
 
@@ -341,7 +341,7 @@ class AsgiServer:
                     return await self.send_error(ae, request)
         return await self.send_error(NotFoundException(status=404, reason="Not Found"), request)
 
-    def handle_static(self, static, request):
+    async def handle_static(self, static, request):
         """
         Обработчик статических файлов
         :param static: Путь к диреткории с файлами
@@ -354,19 +354,16 @@ class AsgiServer:
         if not os.path.isfile(resp_file):
             raise NotFoundException(status=404, reason='Not found')
         try:
-            resp = BaseResponse(status=200, file=resp_file, request=request)
+            with io.open(resp_file, "rb") as f:
+                body = f.read()
+
+            resp = BaseResponse(status=200, file=resp_file, body=body, request=request)
 
             if static['handler'] is not None:
                 resp = static['handler'](resp)
 
-            headers = []
-            for header in resp.headers:
-                headers.append('%s: %s' % (header[0], header[1]))
-
-            self.__transport.send_header(resp.status, resp.headers)
-            with io.open(resp_file, "rb") as f:
-                yield f.read()
-        except Exception as e:
+            return await self.__transport.make_response(resp)
+        except Exception:
             raise NotFoundException(status=404, reason='Not found')
 
     async def send_error(self, err, request=None):
