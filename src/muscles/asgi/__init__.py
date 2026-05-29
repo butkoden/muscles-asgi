@@ -5,6 +5,7 @@ from .template import Template
 from .template import *
 from .restful import *
 from .assets import *
+from .app import MuscularAsgiApp, asgi_app
 
 
 __all__ = (
@@ -44,4 +45,6 @@ __all__ = (
     "api",
     "routes",
     "itinerary",
+    "MuscularAsgiApp",
+    "asgi_app",
 )
