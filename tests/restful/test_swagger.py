@@ -305,6 +305,10 @@ def test_check_swagger():
     app = muscular(environ, start_response)
     for pr in app:
         assert len(pr) > 500
+        html = pr.decode("utf-8")
+        assert '"urls.primaryName": "Api v1"' in html
+        assert '"urls.primaryName": "test2"' not in html
+        assert '"/api/v1/schema"' in html
 
 
 def test_check_schema():
@@ -337,6 +341,5 @@ def test_check_schema():
         assert pr['paths']['/api/v1/test/{id}'].get('get')
         assert pr['paths']['/api/v1/test/{id}'].get('post')
         assert pr['paths']['/api/v1/test/{id}'].get('delete')
-
 
 
