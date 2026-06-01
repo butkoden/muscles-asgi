@@ -38,11 +38,13 @@ class RestApi(Itinerary):
             return template('templates/swagger.jinja2', swagger=self.swagger)
 
         def _schema(request):
-            swagger = Swagger.load(request.path)
+            swagger = Swagger.load(request.path) or self.swagger
             return swagger.dump()
 
         super().add(schema_url, handler=_schema)
         routers.add(kwargs.get('swagger_url', '/swagger'), method="GET", handler=_swagger)
+        routers.add(kwargs.get('docs_url', '/docs'), method="GET", handler=_swagger)
+        routers.add(kwargs.get('openapi_url', '/openapi.json'), method="GET", handler=_schema)
         self.install = True
 
     def _trigger_set_handler(self, handler, *args, tags: list = None, description: str = None, summary: str = None,
