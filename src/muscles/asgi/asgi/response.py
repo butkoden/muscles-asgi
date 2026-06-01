@@ -552,3 +552,15 @@ class MakeResponse:
     @property
     def headers(self):
         return self.response.headers
+
+
+class JsonResponse(BaseResponse):
+    def __init__(self, body=None, status: int = 200, headers: Optional[list] = None, **kwargs):
+        super().__init__(status=status, body=body, headers=headers or [], **kwargs)
+        self.header_append(("Content-Type", "application/json; charset=utf-8"))
+
+
+class HtmlResponse(BaseResponse):
+    def __init__(self, body: str = "", status: int = 200, headers: Optional[list] = None, **kwargs):
+        super().__init__(status=status, body=body, headers=headers or [], **kwargs)
+        self.header_append(("Content-Type", "text/html; charset=utf-8"))
