@@ -3,14 +3,13 @@ import io
 import traceback
 import inspect
 import logging
-import json
 
 from muscles.core import NotFoundException, ApplicationException, ErrorException
 from muscles.core import AttributeErrorException
 from muscles.core import inject, EventsStorageInterface
-from muscles.core import BaseResponse as CoreBaseResponse, normalize_response
+from muscles.core import BaseResponse as CoreBaseResponse
 from .request import RequestMaker
-from .response import MakeResponse, BaseResponse, BadResponse, JsonResponse, HtmlResponse
+from .response import MakeResponse, BaseResponse, BadResponse
 from .routers import routes, itinerary
 from urllib.parse import unquote
 
@@ -206,44 +205,38 @@ class AsgiServer:
             return self.send_error(ex)
 
     def _to_protocol_response(self, response, request=None):
-        def _headers_without_content(core_headers):
-            prepared = []
-            for key, value in (core_headers or {}).items():
-                if str(key).lower() in {"content-type", "content-length"}:
-                    continue
-                prepared.append((key, value))
-            return prepared
-
-        def _from_core(core_response: CoreBaseResponse):
-            content_type = (core_response.content_type or "").lower()
-            headers = _headers_without_content(core_response.headers)
-            body = core_response.body
-
-            if "application/json" in content_type:
-                if isinstance(body, bytes):
-                    try:
-                        body = json.loads(body.decode("utf-8"))
-                    except Exception:
-                        body = body.decode("utf-8")
-                return JsonResponse(body=body, status=core_response.status, headers=headers, request=request)
-
-            if "text/html" in content_type:
-                if isinstance(body, bytes):
-                    body = body.decode("utf-8")
-                return HtmlResponse(body=body, status=core_response.status, headers=headers, request=request)
-
-            return BaseResponse(status=core_response.status, body=body, headers=headers, request=request)
-
         if isinstance(response, BaseResponse):
             return response
         if isinstance(response, CoreBaseResponse):
             if response.redirect:
                 return BaseResponse.redirect(response.redirect, status=response.status)
-            return _from_core(response)
-        core_response = normalize_response(response, request=request)
-        if core_response.redirect:
-            return BaseResponse.redirect(core_response.redirect, status=core_response.status)
-        return _from_core(core_response)
+            headers = [(k, v) for k, v in (response.headers or {}).items()]
+            return BaseResponse(
+                status=response.status,
+                body=response.body,
+                headers=headers,
+                request=request,
+                content_type=response.content_type,
+            )
+
+        # Legacy path: keep transport-native serialization behavior.
+        if isinstance(response, str):
+            return BaseResponse(status=200, body=response, request=request)
+        if isinstance(response, bytes):
+            return BaseResponse(status=200, body=response, request=request)
+        if isinstance(response, dict):
+            return BaseResponse(status=200, body=response, request=request)
+        if isinstance(response, tuple):
+            kwargs = {}
+            status = 200
+            if len(response) >= 1:
+                kwargs["body"] = response[0]
+            if len(response) >= 2:
+                status = response[1]
+            if len(response) >= 3:
+                kwargs["headers"] = response[2]
+            return BaseResponse(status=status, request=request, **kwargs)
+        return BaseResponse(status=200, body=response, request=request)
 
     async def handler(self, request):
         """
