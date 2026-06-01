@@ -7,6 +7,7 @@ import logging
 from muscles.core import NotFoundException, ApplicationException, ErrorException
 from muscles.core import AttributeErrorException
 from muscles.core import inject, EventsStorageInterface
+from muscles.core import BaseResponse as CoreBaseResponse
 from .request import RequestMaker
 from .response import MakeResponse, BaseResponse, BadResponse
 from .routers import routes, itinerary
@@ -203,6 +204,40 @@ class AsgiServer:
             self.logger.exception("ASGI execute error")
             return self.send_error(ex)
 
+    def _to_protocol_response(self, response, request=None):
+        if isinstance(response, BaseResponse):
+            return response
+        if isinstance(response, CoreBaseResponse):
+            if response.redirect:
+                return BaseResponse.redirect(response.redirect, status=response.status)
+            headers = [(k, v) for k, v in (response.headers or {}).items()]
+            return BaseResponse(
+                status=response.status,
+                body=response.body,
+                headers=headers,
+                request=request,
+                content_type=response.content_type,
+            )
+
+        # Legacy path: keep transport-native serialization behavior.
+        if isinstance(response, str):
+            return BaseResponse(status=200, body=response, request=request)
+        if isinstance(response, bytes):
+            return BaseResponse(status=200, body=response, request=request)
+        if isinstance(response, dict):
+            return BaseResponse(status=200, body=response, request=request)
+        if isinstance(response, tuple):
+            kwargs = {}
+            status = 200
+            if len(response) >= 1:
+                kwargs["body"] = response[0]
+            if len(response) >= 2:
+                status = response[1]
+            if len(response) >= 3:
+                kwargs["headers"] = response[2]
+            return BaseResponse(status=status, request=request, **kwargs)
+        return BaseResponse(status=200, body=response, request=request)
+
     async def handler(self, request):
         """
         Обработчик сервера
@@ -291,24 +326,7 @@ class AsgiServer:
                         resp = request.route['handler'](request=request, **dictionary)
                     if inspect.isawaitable(resp):
                         resp = await resp
-                    if not isinstance(resp, BaseResponse) and isinstance(resp, str):
-                        resp = BaseResponse(status=200, body=resp, request=request)
-                    elif not isinstance(resp, BaseResponse) and isinstance(resp, bytes):
-                        resp = BaseResponse(status=200, body=resp, request=request)
-                    elif not isinstance(resp, BaseResponse) and isinstance(resp, dict):
-                        resp = BaseResponse(status=200, body=resp, request=request)
-                    elif not isinstance(resp, BaseResponse) and isinstance(resp, tuple):
-                        kwargs = {}
-                        status = 200
-                        if len(resp) >= 1:
-                            kwargs['body'] = resp[0]
-                        if len(resp) >= 2:
-                            status = resp[1]
-                        if len(resp) >= 3:
-                            kwargs['headers'] = resp[2]
-                        resp = BaseResponse(status=status, request=request, **kwargs)
-                    elif not isinstance(resp, BaseResponse):
-                        resp = BaseResponse(status=200, body=resp, request=request)
+                    resp = self._to_protocol_response(resp, request=request)
 
                     if hasattr(request.itinerary, 'modify_response'):
                         resp = request.itinerary.modify_response(resp)
