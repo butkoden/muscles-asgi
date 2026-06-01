@@ -25,6 +25,7 @@ class RestApi(Itinerary):
             title=kwargs.get('title', 'Simple Api'),
             prefix=prefix,
             version=kwargs.get('version', '1.0'),
+            openapi_version=kwargs.get('openapi_version', '3.0.3'),
             schema_url=re.sub("//+", "/", '/'.join([prefix, schema_url])),
             description=kwargs.get('description', None),
             termsOfService=kwargs.get('termsOfService', None),
@@ -189,4 +190,3 @@ class RestApi(Itinerary):
         def decorator(func):
             self.add_event('before_request', func)
         return decorator
-

@@ -18,6 +18,7 @@ class Swagger(Schema):
         return cls._instances[name]
 
     def __init__(self, *args, name: str = None, schema_url: str = None, prefix: str = None, version: str = None,
+                 openapi_version: str = None,
                  title: str = None, description: str = None, termsOfService: str = None, contact_email: str = None,
                  servers: list = None, security: list[BaseSecurity] = None, **kwargs):
         """
@@ -43,6 +44,7 @@ class Swagger(Schema):
             if not server.startswith('http://') and not server.startswith('https://'):
                 server = "/{server}".format(server=server)
             self.version = version or '1.0'
+            self.openapi_version = openapi_version or '3.0.3'
             self.title = title
             self.schema_url = schema_url
             self.name = name
@@ -80,7 +82,7 @@ class Swagger(Schema):
     def dump(self) -> dict:
         self.schema = {
             'info': {},
-            'openapi': '3.0.3',
+            'openapi': self.openapi_version,
             'contact': {},
             'components': {}
         }
