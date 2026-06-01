@@ -3,6 +3,11 @@
 `muscles-asgi` is the ASGI runtime for Muscles. It mirrors the WSGI API model
 while using ASGI scopes/events for async-capable servers.
 
+## Installation
+
+Canonical ecosystem install matrix is documented in core:
+[Muscles installation matrix](https://github.com/butkoden/muscles/blob/master/docs/installation.md).
+
 ## Runtime
 
 An app binds `Context` to `AsgiStrategy`:
@@ -44,3 +49,5 @@ Run tests with sibling packages on `PYTHONPATH`:
 ```bash
 PYTHONPATH=../muscles/src:src python -m pytest -q
 ```
+
+Production notes: [docs/production.md](docs/production.md).
