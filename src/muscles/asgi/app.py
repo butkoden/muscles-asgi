@@ -41,10 +41,7 @@ class MuscularAsgiApp(metaclass=ApplicationMeta):
 
 def asgi_app(app: MuscularAsgiApp):
     async def application(scope, receive, send):
-        app.context.set_param("scope", scope)
-        app.context.set_param("receive", receive)
-        app.context.set_param("send", send)
-        result = app.context.execute()
+        result = app.context.execute(scope=scope, receive=receive, send=send)
         if inspect.isawaitable(result):
             await result
 
