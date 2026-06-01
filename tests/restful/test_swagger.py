@@ -368,3 +368,27 @@ def test_check_schema_with_custom_openapi_version():
         schema = json.loads(pr)
         assert schema['openapi'] == '3.1.0'
 
+
+def test_check_default_docs_and_openapi_endpoints():
+    environ.update({
+        'REQUEST_METHOD': 'GET',
+        'REQUEST_URI': '/docs',
+        'PATH_INFO': '/docs',
+        'CONTENT_TYPE': 'text/html',
+    })
+    muscular = Muscular()
+    muscular.context.strategy = AsgiStrategy
+    app = muscular(environ, start_response)
+    html = b''.join(app).decode("utf-8")
+    assert '"urls.primaryName": "Api v1"' in html
+
+    environ.update({
+        'REQUEST_METHOD': 'GET',
+        'REQUEST_URI': '/openapi.json',
+        'PATH_INFO': '/openapi.json',
+        'CONTENT_TYPE': 'application/json',
+    })
+    app = muscular(environ, start_response)
+    schema = json.loads(b''.join(app))
+    assert schema['info']['title'] == 'Api v1'
+    assert schema['openapi'] == '3.0.3'
