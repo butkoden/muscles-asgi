@@ -8,7 +8,7 @@ class Swagger(Schema):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.schema = {'info': {}, 'openapi': '3.0.3'}
+        self.schema = {'info': {}, 'openapi': kwargs.get('openapi_version', '3.0.3')}
         if kwargs.get('title'):
             self.schema['info']['title'] = kwargs['title']
         elif kwargs.get('name'):
