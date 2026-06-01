@@ -42,6 +42,11 @@ Request parsing does not require `cgi`, `multipart` or `python-magic` at import
 time. Multipart form data uses the standard library path, and missing MIME
 detection falls back safely.
 
+ASGI request execution is stateless on `Context`: request-specific data
+(`scope`, `receive`, `send`) is passed directly into `context.execute(...)`
+per request. The strategy keeps a persistent server lifecycle while request
+state stays isolated.
+
 ## Development
 
 Run tests with sibling packages on `PYTHONPATH`:
