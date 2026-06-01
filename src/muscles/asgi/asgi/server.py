@@ -3,12 +3,14 @@ import io
 import traceback
 import inspect
 import logging
+import json
 
 from muscles.core import NotFoundException, ApplicationException, ErrorException
 from muscles.core import AttributeErrorException
 from muscles.core import inject, EventsStorageInterface
+from muscles.core import BaseResponse as CoreBaseResponse, normalize_response
 from .request import RequestMaker
-from .response import MakeResponse, BaseResponse, BadResponse
+from .response import MakeResponse, BaseResponse, BadResponse, JsonResponse, HtmlResponse
 from .routers import routes, itinerary
 from urllib.parse import unquote
 
@@ -203,6 +205,46 @@ class AsgiServer:
             self.logger.exception("ASGI execute error")
             return self.send_error(ex)
 
+    def _to_protocol_response(self, response, request=None):
+        def _headers_without_content(core_headers):
+            prepared = []
+            for key, value in (core_headers or {}).items():
+                if str(key).lower() in {"content-type", "content-length"}:
+                    continue
+                prepared.append((key, value))
+            return prepared
+
+        def _from_core(core_response: CoreBaseResponse):
+            content_type = (core_response.content_type or "").lower()
+            headers = _headers_without_content(core_response.headers)
+            body = core_response.body
+
+            if "application/json" in content_type:
+                if isinstance(body, bytes):
+                    try:
+                        body = json.loads(body.decode("utf-8"))
+                    except Exception:
+                        body = body.decode("utf-8")
+                return JsonResponse(body=body, status=core_response.status, headers=headers, request=request)
+
+            if "text/html" in content_type:
+                if isinstance(body, bytes):
+                    body = body.decode("utf-8")
+                return HtmlResponse(body=body, status=core_response.status, headers=headers, request=request)
+
+            return BaseResponse(status=core_response.status, body=body, headers=headers, request=request)
+
+        if isinstance(response, BaseResponse):
+            return response
+        if isinstance(response, CoreBaseResponse):
+            if response.redirect:
+                return BaseResponse.redirect(response.redirect, status=response.status)
+            return _from_core(response)
+        core_response = normalize_response(response, request=request)
+        if core_response.redirect:
+            return BaseResponse.redirect(core_response.redirect, status=core_response.status)
+        return _from_core(core_response)
+
     async def handler(self, request):
         """
         Обработчик сервера
@@ -291,24 +333,7 @@ class AsgiServer:
                         resp = request.route['handler'](request=request, **dictionary)
                     if inspect.isawaitable(resp):
                         resp = await resp
-                    if not isinstance(resp, BaseResponse) and isinstance(resp, str):
-                        resp = BaseResponse(status=200, body=resp, request=request)
-                    elif not isinstance(resp, BaseResponse) and isinstance(resp, bytes):
-                        resp = BaseResponse(status=200, body=resp, request=request)
-                    elif not isinstance(resp, BaseResponse) and isinstance(resp, dict):
-                        resp = BaseResponse(status=200, body=resp, request=request)
-                    elif not isinstance(resp, BaseResponse) and isinstance(resp, tuple):
-                        kwargs = {}
-                        status = 200
-                        if len(resp) >= 1:
-                            kwargs['body'] = resp[0]
-                        if len(resp) >= 2:
-                            status = resp[1]
-                        if len(resp) >= 3:
-                            kwargs['headers'] = resp[2]
-                        resp = BaseResponse(status=status, request=request, **kwargs)
-                    elif not isinstance(resp, BaseResponse):
-                        resp = BaseResponse(status=200, body=resp, request=request)
+                    resp = self._to_protocol_response(resp, request=request)
 
                     if hasattr(request.itinerary, 'modify_response'):
                         resp = request.itinerary.modify_response(resp)
