@@ -343,3 +343,28 @@ def test_check_schema():
         assert pr['paths']['/api/v1/test/{id}'].get('delete')
 
 
+def test_check_schema_with_custom_openapi_version():
+    class CustomOpenApiMuscular(Muscular):
+        api1 = RestApi(
+            name='api.v1.custom.openapi',
+            title='Api custom',
+            prefix='/api/custom',
+            version='1.0',
+            openapi_version='3.1.0',
+            schema_url='schema',
+            swagger_url='/swagger-custom',
+        )
+
+    environ.update({
+        'REQUEST_METHOD': 'GET',
+        'REQUEST_URI': '/api/custom/schema',
+        'PATH_INFO': '/api/custom/schema',
+        'CONTENT_TYPE': 'application/json',
+    })
+    muscular = CustomOpenApiMuscular()
+    muscular.context.strategy = AsgiStrategy
+    app = muscular(environ, start_response)
+    for pr in app:
+        schema = json.loads(pr)
+        assert schema['openapi'] == '3.1.0'
+

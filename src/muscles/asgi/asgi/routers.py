@@ -1,4 +1,5 @@
 from functools import wraps
+import logging
 import re
 import os
 from abc import ABC
@@ -34,9 +35,7 @@ class RouteRuleDefault(RouteRule):
     name = 'default'
 
     def is_match(self, val, chunk):
-        if not re.search(r"^\{[^\}]+\}$", val) and val == chunk:
-            return True
-        return False
+        return not (val and val[0] == '{' and val[-1] == '}') and val == chunk
 
     def param(self, val):
         return str(val)
@@ -52,7 +51,12 @@ class RouteRuleVar(RouteRule):
     name = 'var'
 
     def is_match(self, val, chunk):
-        return True if re.search(r"^([\w\d\%\_\-]+)$", val) else False
+        if not val:
+            return False
+        for char in val:
+            if not (char.isalnum() or char in {'%', '_', '-'}):
+                return False
+        return True
 
     def param(self, val):
         return str(val)
@@ -68,7 +72,7 @@ class RouteRuleInt(RouteRule):
     name = 'int'
 
     def is_match(self, val, chunk):
-        return True if re.search(r"^([\d]+)$", val) else False
+        return bool(val) and val.isdigit()
 
     def param(self, val):
         return int(val)
@@ -84,7 +88,10 @@ class RouteRuleFloat(RouteRule):
     name = 'float'
 
     def is_match(self, val, chunk):
-        return True if re.search(r"^([\d]+\.[\d]+)$", val) else False
+        if not val:
+            return False
+        left, sep, right = val.partition('.')
+        return bool(sep) and left.isdigit() and right.isdigit()
 
     def param(self, val):
         return float(val)
@@ -638,12 +645,19 @@ class Itinerary1:
 
         :return:
         """
-        map = self.nodes_map
+        logger = getattr(self, "logger", None) or logging.getLogger("muscles.asgi.router")
+        route_map = self.nodes_map
         def tree(node, i):
             for r in node.childrens:
                 i = i + 1
-                meth = [_m['method'] or '*' for _m in map if r.key == _m['key']]
-                print('. ' * i, '/%s' % r.route, ' ' * 3, '[%s key:%s]' % (','.join(meth).upper(), r.key))
+                meth = [_m['method'] or '*' for _m in route_map if r.key == _m['key']]
+                logger.debug(
+                    "%s /%s    [%s key:%s]",
+                    '. ' * i,
+                    r.route,
+                    ','.join(meth).upper(),
+                    r.key,
+                )
                 tree(r, i)
                 i = i - 1
 

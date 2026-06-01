@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 import sys
 
 from muscles import JsonResponseBody
@@ -352,27 +353,21 @@ def test_check_instance():
     for pr in app:
         assert pr == b'{"method": "GET", "request": {"url": "http://localhost:8080/api/v1/test2"}}'
 
-    captured_output = io.StringIO()
-    sys.stdout = captured_output
+    log_stream = io.StringIO()
+    logger = logging.getLogger("muscles.router")
+    handler = logging.StreamHandler(log_stream)
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
     muscular.api1.print_tree()
-    sys.stdout = sys.__stdout__
-    assert ".  /api     [ key:None]" in captured_output.getvalue().strip()
-    assert ". .  /v1     [ key:None]" in captured_output.getvalue().strip()
-    assert ". . .  /schema     [* key:api.v1.schema]" in captured_output.getvalue().strip()
-    assert ". . .  /test     [OPTION,GET,POST,DELETE,PUT key:api.v1.test]" in captured_output.getvalue().strip()
-    assert ". . . .  /{id:var}     [GET,POST,DELETE key:api.v1.test.{id}]" in captured_output.getvalue().strip()
-    assert ". . .  /test2     [OPTION,GET key:api.v1.test2]" in captured_output.getvalue().strip()
-
-    captured_output = io.StringIO()
-    sys.stdout = captured_output
     api1.print_tree()
-    sys.stdout = sys.__stdout__
-    assert ".  /api     [ key:None]" in captured_output.getvalue().strip()
-    assert ". .  /v1     [ key:None]" in captured_output.getvalue().strip()
-    assert ". . .  /schema     [* key:api.v1.schema]" in captured_output.getvalue().strip()
-    assert ". . .  /test     [OPTION,GET,POST,DELETE,PUT key:api.v1.test]" in captured_output.getvalue().strip()
-    assert ". . . .  /{id:var}     [GET,POST,DELETE key:api.v1.test.{id}]" in captured_output.getvalue().strip()
-    assert ". . .  /test2     [OPTION,GET key:api.v1.test2]" in captured_output.getvalue().strip()
+    logger.removeHandler(handler)
+    output = log_stream.getvalue().strip()
+    assert ".  /api    [ key:None]" in output
+    assert ". .  /v1    [ key:None]" in output
+    assert ". . .  /schema    [* key:api.v1.schema]" in output
+    assert ". . .  /test    [OPTION,GET,POST,DELETE,PUT key:api.v1.test]" in output
+    assert ". . . .  /{id:var}    [GET,POST,DELETE key:api.v1.test.{id}]" in output
+    assert ". . .  /test2    [OPTION,GET key:api.v1.test2]" in output
 
 
 def test_check_get():
