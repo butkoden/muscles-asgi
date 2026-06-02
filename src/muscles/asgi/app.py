@@ -33,7 +33,7 @@ class MuscularAsgiApp(metaclass=ApplicationMeta):
         }
     )
 
-    asgi = Context(AsgiStrategy, transport="asgi", params={})
+    asgi = Context(AsgiStrategy, params={})
 
     def run(self, *args, **kwargs):
         return self.asgi.execute(*args, **kwargs, shutup=self.shutup)

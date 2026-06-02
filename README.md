@@ -19,7 +19,7 @@ from muscles.asgi import AsgiStrategy
 
 class App(metaclass=ApplicationMeta):
     config = Configurator(obj={"main": {"HOST": "0.0.0.0", "PORT": "8080"}})
-    context = Context(AsgiStrategy, transport="asgi", params={})
+    context = Context(AsgiStrategy, params={})
 
     def run(self, *args):
         return self.context.execute(*args, shutup=True)
