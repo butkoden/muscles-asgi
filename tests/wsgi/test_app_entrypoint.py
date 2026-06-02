@@ -17,7 +17,7 @@ def test_asgi_app_passes_request_state_via_execute_kwargs():
             return None
 
     class DummyApp:
-        context = DummyContext()
+        asgi = DummyContext()
 
     application = asgi_app(DummyApp())
 

@@ -33,15 +33,28 @@ class MuscularAsgiApp(metaclass=ApplicationMeta):
         }
     )
 
-    context = Context(AsgiStrategy, {})
+    asgi = Context(AsgiStrategy, transport="asgi", params={})
 
     def run(self, *args, **kwargs):
-        return self.context.execute(*args, **kwargs, shutup=self.shutup)
+        return self.asgi.execute(*args, **kwargs, shutup=self.shutup)
 
 
-def asgi_app(app: MuscularAsgiApp):
+def asgi_app(app: MuscularAsgiApp, context: str | Context | None = None):
+    def _resolve_context():
+        if isinstance(context, Context):
+            return context
+        if context is not None and hasattr(app, context):
+            selected = getattr(app, context)
+            if not isinstance(selected, Context):
+                raise TypeError(f"Application has no context '{context}'")
+            return selected
+        if hasattr(app, 'asgi'):
+            return getattr(app, 'asgi')
+        raise TypeError("Application has no context 'asgi'")
+
     async def application(scope, receive, send):
-        result = app.context.execute(scope=scope, receive=receive, send=send)
+        ctx = _resolve_context()
+        result = ctx.execute(scope=scope, receive=receive, send=send)
         if inspect.isawaitable(result):
             await result
 
