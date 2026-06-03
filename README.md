@@ -19,7 +19,7 @@ from muscles.asgi import AsgiStrategy
 
 class App(metaclass=ApplicationMeta):
     config = Configurator(obj={"main": {"HOST": "0.0.0.0", "PORT": "8080"}})
-    context = Context(AsgiStrategy, {})
+    context = Context(AsgiStrategy, params={})
 
     def run(self, *args):
         return self.context.execute(*args, shutup=True)
@@ -41,6 +41,11 @@ More detail: [docs/openapi-and-routing.md](docs/openapi-and-routing.md).
 Request parsing does not require `cgi`, `multipart` or `python-magic` at import
 time. Multipart form data uses the standard library path, and missing MIME
 detection falls back safely.
+
+ASGI request execution is stateless on `Context`: request-specific data
+(`scope`, `receive`, `send`) is passed directly into `context.execute(...)`
+per request. The strategy keeps a persistent server lifecycle while request
+state stays isolated.
 
 ## Development
 

@@ -15,6 +15,9 @@ class AsgiStrategy(BaseStrategy):
     """
     Стратегия ASGI сервера
     """
+    def __init__(self):
+        self._server = None
+        self._server_key = None
 
     def execute(self, *args, error_handler: Optional[ResponseErrorHandler] = None, **kwargs):
         """
@@ -36,7 +39,11 @@ class AsgiStrategy(BaseStrategy):
             logger = logging.getLogger("muscles.asgi")
         debug = bool(kwargs.get('debug', False))
 
-        server = AsgiServer(host, port, error_handler=error_handler, logger=logger, debug=debug)
+        server_key = (host, port, bool(debug), error_handler, id(logger))
+        if self._server is None or self._server_key != server_key:
+            self._server = AsgiServer(host, port, error_handler=error_handler, logger=logger, debug=debug)
+            self._server_key = server_key
+        server = self._server
         transport = kwargs.get('transport', AsgiTransport)
         server.init_transport(transport)
         if 'environ' in kwargs and 'scope' not in kwargs:

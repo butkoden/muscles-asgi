@@ -69,6 +69,7 @@ class RestApi(Itinerary):
 
     def _trigger_set_controller(self, handler, *args, tags: list = None, description: str = None, summary: str = None,
                                 request: list = [], security: list = [], response: dict = {}, parameters: list = [],
+                                stateful: bool = False,
                                 **kwargs):
         self.swagger.tags.append({
             "name": handler.__name__,
@@ -78,6 +79,8 @@ class RestApi(Itinerary):
             #     "url": "http://swagger.io"
             # }
         })
+        if not hasattr(handler, 'stateful_controller'):
+            handler.stateful_controller = stateful
         return handler
 
     def add(self, route, key=None, handler=None, method: str = '*', content_type: str = '*/*',
@@ -132,7 +135,8 @@ class RestApi(Itinerary):
         return decorator
 
     def controller(self, route, model: Schema = None, tags: list = None, description: str = None, summary: str = None,
-                   request: list = [], security: list = [], response: dict = {}, parameters: list = [], **kwargs):
+                   request: list = [], security: list = [], response: dict = {}, parameters: list = [],
+                   stateful: bool = False, **kwargs):
         """
         Регистрация контроллера для обработки запросов классом
 
@@ -145,6 +149,7 @@ class RestApi(Itinerary):
         :param response:
         :param model: Модель данных
         :param route: Маршрут
+        :param stateful: Не кэшировать инстанс контроллера между запросами
         :return:
         """
         decorator = super().controller(route, model=model, tags=tags, description=description, summary=summary,
