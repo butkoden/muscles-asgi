@@ -1,8 +1,9 @@
 import os
 import io
 import traceback
-import inspect
 import logging
+from inspect import iscoroutinefunction
+from collections import OrderedDict
 
 from muscles.core import NotFoundException, ApplicationException, ErrorException
 from muscles.core import AttributeErrorException
@@ -171,9 +172,40 @@ class AsgiServer:
         self.logger = logger or logging.getLogger("muscles.asgi")
         self.debug = debug
         self._route_cache = {}
+        self.__controller_cache = OrderedDict()
+        self.__controller_cache_size = 128
 
         self.__transport = self.__transport_class()
         self.__transport.init_server(self)
+
+    @staticmethod
+    def __is_stateful_controller(handler):
+        controller = getattr(handler, 'controller', None)
+        if controller is None:
+            return False
+        return bool(getattr(handler, 'stateful_controller', False) or getattr(controller, 'stateful_controller', False))
+
+    def __get_controller_instance(self, handler):
+        if not hasattr(handler, 'controller'):
+            return None
+
+        controller_class = handler.controller
+
+        if self.__is_stateful_controller(handler):
+            return controller_class()
+
+        controller = self.__controller_cache.get(controller_class)
+        if controller is not None:
+            self.__controller_cache.move_to_end(controller_class)
+            return controller
+
+        controller = controller_class()
+        self.__controller_cache[controller_class] = controller
+        self.__controller_cache.move_to_end(controller_class)
+        if len(self.__controller_cache) > self.__controller_cache_size:
+            self.__controller_cache.popitem(last=False)
+
+        return controller
 
     def init_transport(self, transport):
         """
@@ -207,6 +239,25 @@ class AsgiServer:
     def _to_protocol_response(self, response, request=None):
         if isinstance(response, BaseResponse):
             return response
+
+        if isinstance(response, str):
+            return BaseResponse(status=200, body=response, request=request)
+        if isinstance(response, bytes):
+            return BaseResponse(status=200, body=response, request=request)
+        if isinstance(response, dict):
+            return BaseResponse(
+                status=200,
+                body=BaseResponse(body=response, request=request).make_body(),
+                request=request,
+                content_type='application/json; charset=utf-8',
+            )
+        if isinstance(response, list):
+            return BaseResponse(
+                status=200,
+                body=BaseResponse(body=response, request=request).make_body(),
+                request=request,
+                content_type='application/json; charset=utf-8',
+            )
         if isinstance(response, CoreBaseResponse):
             if response.redirect:
                 return BaseResponse.redirect(response.redirect, status=response.status)
@@ -220,17 +271,18 @@ class AsgiServer:
             )
 
         # Legacy path: keep transport-native serialization behavior.
-        if isinstance(response, str):
-            return BaseResponse(status=200, body=response, request=request)
-        if isinstance(response, bytes):
-            return BaseResponse(status=200, body=response, request=request)
-        if isinstance(response, dict):
-            return BaseResponse(status=200, body=response, request=request)
         if isinstance(response, tuple):
             kwargs = {}
             status = 200
             if len(response) >= 1:
-                kwargs["body"] = response[0]
+                if isinstance(response[0], dict):
+                    kwargs["body"] = BaseResponse(body=response[0], request=request).make_body()
+                    kwargs["content_type"] = 'application/json; charset=utf-8'
+                elif isinstance(response[0], list):
+                    kwargs["body"] = BaseResponse(body=response[0], request=request).make_body()
+                    kwargs["content_type"] = 'application/json; charset=utf-8'
+                else:
+                    kwargs["body"] = response[0]
             if len(response) >= 2:
                 status = response[1]
             if len(response) >= 3:
@@ -244,7 +296,6 @@ class AsgiServer:
         :param request: Запрос к серверу
         :return:
         """
-        headers = []
         if request.is_exception:
             return await self.send_error(request.exception, request)
         static = routes.get_current_static(request)
@@ -260,42 +311,13 @@ class AsgiServer:
         :param request: Объект запроса
         :return:
         """
+        dictionary = {}
         try:
-            if request.type == 'lifespan' or request.type is None:
-                resp = BaseResponse(status=200, body=None, request=request)
-                return await self.__transport.make_response(resp)
+            pre_route_resp = self._pre_route_checks(request, evnetStorage)
+            if pre_route_resp is not None:
+                return await self._make_response(pre_route_resp)
 
-            before_request = evnetStorage.get('before_request')
-            if before_request:
-                for handler in before_request:
-                    resp = handler(request)
-                    if resp:
-                        if isinstance(resp, str):
-                            resp = BaseResponse(status=200, body=resp, request=request)
-                        return await self.__transport.make_response(resp)
-
-            route_key = (
-                request.path,
-                request.method.lower() if request.method else "",
-                (request.content_type or "").lower(),
-            )
-            cached_instance = self._route_cache.get(route_key)
-            if cached_instance is not None:
-                call, dictionary = cached_instance.get_current_route(request)
-                if call:
-                    request.route = call
-                    request.itinerary = cached_instance
-            if request.route is None:
-                for _, instance in itinerary.instance_list():
-                    call, dictionary = instance.get_current_route(request)
-                    if call:
-                        request.route = call
-                        request.itinerary = instance
-                        self._route_cache[route_key] = instance
-                        break
-            if request.route and 'instance' in request.route.keys():
-                for func in request.route['instance'].get_event('before_request'):
-                    func(request)
+            dictionary = self._resolve_route(request)
 
         except ErrorException as ae:
             self.logger.exception("ASGI route resolution error")
@@ -316,26 +338,12 @@ class AsgiServer:
 
         if request.route:
             if request.route['redirect'] and request.route['redirect'] is not None:
-                resp = BaseResponse.redirect(request.route['redirect'])
+                return await self._make_response(BaseResponse.redirect(request.route['redirect']))
             else:
                 try:
-                    if hasattr(request.route['handler'], 'controller'):
-                        resp = request.route['handler'](request.route['handler'].controller(), request=request,
-                                                        **dictionary)
-                    else:
-                        resp = request.route['handler'](request=request, **dictionary)
-                    if inspect.isawaitable(resp):
-                        resp = await resp
-                    resp = self._to_protocol_response(resp, request=request)
-
-                    if hasattr(request.itinerary, 'modify_response'):
-                        resp = request.itinerary.modify_response(resp)
-
-                    headers = []
-                    for header in resp.headers:
-                        headers.append('%s: %s' % (header[0], header[1]))
-
-                    return await self.__transport.make_response(resp)
+                    handler_response = await self._call_handler(request, dictionary)
+                    response = self._convert_response(handler_response, request=request)
+                    return await self._make_response(response)
                 except ApplicationException as ae:
                     self.logger.exception("ASGI application exception")
                     ae = ApplicationException(status=400, reason=ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
@@ -357,6 +365,95 @@ class AsgiServer:
                     ae = ApplicationException(status=500, reason=ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
                     return await self.send_error(ae, request)
         return await self.send_error(NotFoundException(status=404, reason="Not Found"), request)
+
+    async def _make_response(self, response):
+        """
+        Единая отправка ответа в транспорт.
+        :param response: Ответ в формате BaseResponse
+        :return:
+        """
+        return await self.__transport.make_response(response)
+
+    def _pre_route_checks(self, request, evnetStorage: EventsStorageInterface):
+        """
+        Быстрые проверки до маршрутизации.
+        :param request: Запрос
+        :param evnetStorage: Контейнер событий
+        :return: Подготовленный ответ или None
+        """
+        if request.type == 'lifespan' or request.type is None:
+            return BaseResponse(status=200, body=None, request=request)
+
+        before_request = evnetStorage.get('before_request')
+        if before_request:
+            for handler in before_request:
+                resp = handler(request)
+                if resp:
+                    if isinstance(resp, str):
+                        return BaseResponse(status=200, body=resp, request=request)
+                    return resp
+        return None
+
+    def _resolve_route(self, request):
+        """
+        Разрешение маршрута по кэшу/реестру.
+        :param request: Запрос
+        :return: Параметры найденного маршрута.
+        """
+        route_key = (
+            request.path,
+            request.method.lower() if request.method else "",
+            (request.content_type or "").lower(),
+        )
+        dictionary = {}
+        cached_instance = self._route_cache.get(route_key)
+        if cached_instance is not None:
+            call, dictionary = cached_instance.get_current_route(request)
+            if call:
+                request.route = call
+                request.itinerary = cached_instance
+        if request.route is None:
+            for _, instance in itinerary.instance_list():
+                call, dictionary = instance.get_current_route(request)
+                if call:
+                    request.route = call
+                    request.itinerary = instance
+                    self._route_cache[route_key] = instance
+                    break
+        if request.route and 'instance' in request.route.keys():
+            for func in request.route['instance'].get_event('before_request'):
+                func(request)
+        return dictionary
+
+    async def _call_handler(self, request, dictionary):
+        """
+        Вызов бизнес-обработчика маршрута.
+        :param request: Запрос
+        :param dictionary: Параметры маршрута
+        :return: Результат обработчика
+        """
+        handler = request.route['handler']
+        if hasattr(handler, 'controller'):
+            handler_controller = self.__get_controller_instance(handler)
+            if iscoroutinefunction(handler):
+                return await handler(handler_controller, request=request, **dictionary)
+            return handler(handler_controller, request=request, **dictionary)
+
+        if iscoroutinefunction(handler):
+            return await handler(request=request, **dictionary)
+        return handler(request=request, **dictionary)
+
+    def _convert_response(self, response, request):
+        """
+        Нормализация ответа в протокольный формат.
+        :param response: Результат бизнес-обработчика
+        :param request: Запрос
+        :return: BaseResponse
+        """
+        response = self._to_protocol_response(response, request=request)
+        if hasattr(request.itinerary, 'modify_response'):
+            response = request.itinerary.modify_response(response)
+        return response
 
     async def handle_static(self, static, request):
         """
