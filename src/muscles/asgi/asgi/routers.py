@@ -320,7 +320,9 @@ class Itinerary1:
     def _trigger_set_handler(self, handler, *args, **kwargs):
         return handler
 
-    def _trigger_set_controller(self, handler, *args, **kwargs):
+    def _trigger_set_controller(self, handler, *args, stateful: bool = False, **kwargs):
+        if not hasattr(handler, 'stateful_controller'):
+            handler.stateful_controller = stateful
         return handler
 
     def add(self, route, key=None, handler=None, method=None, content_type=None,
@@ -450,18 +452,20 @@ class Itinerary1:
 
         return decorator
 
-    def controller(self, route, *args, model: Schema = None, security: list[BaseSecurity, str] = None, **kwargs):
+    def controller(self, route, *args, model: Schema = None, security: list[BaseSecurity, str] = None,
+                   stateful: bool = False, **kwargs):
         """
         Регистрация контроллера для обработки запросов классом
 
         :param model: Модель данных
         :param route: Маршрут
+        :param stateful: Не кэшировать инстанс контроллера между запросами
         :return:
         """
         def decorator(func):
             func.actions = []
             func.security = []
-            func = self._trigger_set_controller(func, *args, **kwargs)
+            func = self._trigger_set_controller(func, *args, stateful=stateful, **kwargs)
             for name in func.__dict__:
                 method = func.__dict__[name]
 
