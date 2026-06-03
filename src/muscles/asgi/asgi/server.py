@@ -9,8 +9,9 @@ from muscles.core import NotFoundException, ApplicationException, ErrorException
 from muscles.core import AttributeErrorException
 from muscles.core import inject, EventsStorageInterface
 from muscles.core import BaseResponse as CoreBaseResponse
+from muscles.core import normalize_problem_payload
 from .request import RequestMaker
-from .response import MakeResponse, BaseResponse, BadResponse
+from .response import MakeResponse, BaseResponse, BadResponse, Response
 from .routers import routes, itinerary
 from urllib.parse import unquote
 
@@ -487,36 +488,57 @@ class AsgiServer:
         :param request: Объект запроса
         :return:
         """
-        try:
-            status = err.status if hasattr(err, 'status') else 500
-            reason = err.reason if hasattr(err, 'reason') else str(err)
-            body = err.body if hasattr(err, 'body') else str(err)
-            trace = err.traceback if hasattr(err, 'traceback') else None
-        except Exception as e:
-            self.logger.exception("ASGI error serialization failure")
-            status = 500
-            reason = b'Internal Server Error'
-            body = b'Internal Server Error'
-            trace = err.traceback if hasattr(err, 'traceback') else None
-        self.logger.error("ASGI error status=%s reason=%s", status, reason)
+        payload = normalize_problem_payload(err, request=request, include_trace=self.debug)
+        status = payload.get("status", 500)
+        title = payload.get("title")
+        self.logger.error("ASGI error status=%s reason=%s", status, title)
+
         if self.debug:
-            self.logger.debug("%s", "\n".join(body) if isinstance(body, list) else body)
+            trace = payload.get("trace")
             self.logger.debug("%s", "\n".join(trace) if isinstance(trace, list) else trace)
 
+        response: Response | BaseResponse
         if issubclass(self.__error_handler, Exception):
-            resp = self.__error_handler().handler(status=status, reason=reason, body=body, trace=trace, request=request)
+            err_response = self.__error_handler().handler(
+                status=status,
+                reason=title,
+                body=payload,
+                trace=payload.get("trace"),
+                request=request,
+            )
+            if isinstance(err_response, BaseResponse):
+                response = err_response
+            elif isinstance(err_response, dict):
+                response = Response(
+                    status=status,
+                    body=err_response,
+                    headers=[("Content-Type", "application/problem+json")],
+                    request=request,
+                    content_type='application/problem+json',
+                )
+            else:
+                response = Response(
+                    status=status,
+                    body=payload,
+                    headers=[("Content-Type", "application/problem+json")],
+                    request=request,
+                    content_type='application/problem+json',
+                )
         else:
-            resp = BadResponse(status=status, reason=reason, body=body, trace=trace, request=request)
+            response = Response(
+                status=status,
+                body=payload,
+                headers=[("Content-Type", "application/problem+json")],
+                request=request,
+                content_type='application/problem+json',
+            )
         # traceback.print_exc(file=sys.stdout)
         # call = routes.get_current_error_handler(resp)
 
         for _, instance in itinerary.instance_list():
-            call = instance.get_current_error_handler(resp)
+            call = instance.get_current_error_handler(response)
             if call:
-                resp.body = call['handler'](resp, request)
+                response.body = call['handler'](response, request)
                 break
 
-        headers = []
-        for header in resp.headers:
-            headers.append('%s: %s' % (header[0], header[1]))
-        return await self.__transport.make_response(resp)
+        return await self.__transport.make_response(response)
