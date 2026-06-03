@@ -59,18 +59,39 @@ class RestApi(Itinerary):
         canonical_ready = canonical_alias_map["canonical"]["ready"]
         canonical_live = canonical_alias_map["canonical"]["live"]
 
+        normalized_prefix = re.sub("//+", "/", f"/{prefix.strip('/')}" if prefix else "/")
+
+        def _expand_with_root_aliases(route: str, aliases: list[str]) -> list[str]:
+            paths = [route]
+            paths.extend(aliases)
+            if normalized_prefix != "/" and route:
+                for source_path in [route, *aliases]:
+                    source_path = re.sub("//+", "/", source_path)
+                    if source_path == normalized_prefix:
+                        paths.append("/")
+                    elif source_path.startswith(f"{normalized_prefix}/"):
+                        paths.append(source_path[len(normalized_prefix):])
+            uniq_paths = []
+            for item in paths:
+                if item not in uniq_paths:
+                    uniq_paths.append(item)
+            return uniq_paths
+
         openapi_aliases = [alias for alias in _aliases_for(canonical_openapi) if alias != canonical_openapi]
         docs_aliases = [alias for alias in _aliases_for(canonical_docs) if alias != canonical_docs]
         healthz_aliases = [alias for alias in _aliases_for(canonical_healthz) if alias != canonical_healthz]
 
-        for path in [canonical_openapi, *openapi_aliases]:
+        original_prefix = self.prefix
+        self.prefix = None
+        for path in _expand_with_root_aliases(canonical_openapi, openapi_aliases):
             super().add(path, handler=_schema, canonical_route=canonical_openapi, aliases=openapi_aliases)
-        for path in [canonical_docs, *docs_aliases, canonical_redoc]:
+        for path in _expand_with_root_aliases(canonical_docs, [*docs_aliases, canonical_redoc]):
             super().add(path, handler=_swagger, canonical_route=canonical_docs, aliases=docs_aliases)
-        for path in [canonical_healthz, *healthz_aliases]:
+        for path in _expand_with_root_aliases(canonical_healthz, healthz_aliases):
             super().add(path, handler=_health, canonical_route=canonical_healthz, aliases=healthz_aliases)
-        for path in [canonical_ready, canonical_live]:
+        for path in _expand_with_root_aliases(canonical_ready, [canonical_live]):
             super().add(path, handler=_health, canonical_route=path, aliases=[])
+        self.prefix = original_prefix
         self.install = True
 
     def _trigger_set_handler(self, handler, *args, tags: list = None, description: str = None, summary: str = None,
