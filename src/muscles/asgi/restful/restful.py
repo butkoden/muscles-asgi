@@ -3,7 +3,7 @@ import re
 
 from muscles.core import EventsStorageInterface, inject
 from muscles.core import Itinerary
-from ..asgi import Routes
+from muscles.core import build_route_aliases
 from ..template import Template
 from muscles.core import Schema
 from .swagger import Swagger
@@ -15,10 +15,13 @@ class RestApi(Itinerary):
         tpl_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'templates'))
         template = Template(templates=tpl_path)
 
-        routers = Routes()
-
         prefix = kwargs.get('prefix', '/')
         schema_url = kwargs.get('schema_url', 'schema')
+        docs_url = kwargs.get('docs_url', '/docs')
+        swagger_url = kwargs.get('swagger_url', '/swagger')
+        openapi_url = kwargs.get('openapi_url', '/openapi.json')
+        canonical_alias_map = build_route_aliases(prefix=prefix, schema_url=schema_url, swagger_url=swagger_url,
+                                                 openapi_url=openapi_url, docs_url=docs_url)
 
         self.swagger = Swagger(
             name=kwargs.get('name', 'default'),
@@ -41,10 +44,33 @@ class RestApi(Itinerary):
             swagger = Swagger.load(request.path) or self.swagger
             return swagger.dump()
 
-        super().add(schema_url, handler=_schema)
-        routers.add(kwargs.get('swagger_url', '/swagger'), method="GET", handler=_swagger)
-        routers.add(kwargs.get('docs_url', '/docs'), method="GET", handler=_swagger)
-        routers.add(kwargs.get('openapi_url', '/openapi.json'), method="GET", handler=_schema)
+        def _aliases_for(canonical_route):
+            return sorted(
+                [alias for alias, target in canonical_alias_map["aliases"].items() if target == canonical_route]
+            )
+
+        def _health(request):
+            return {"status": "ok", "service": kwargs.get('name', 'default')}
+
+        canonical_openapi = canonical_alias_map["canonical"]["openapi"]
+        canonical_docs = canonical_alias_map["canonical"]["docs"]
+        canonical_redoc = canonical_alias_map["canonical"]["redoc"]
+        canonical_healthz = canonical_alias_map["canonical"]["healthz"]
+        canonical_ready = canonical_alias_map["canonical"]["ready"]
+        canonical_live = canonical_alias_map["canonical"]["live"]
+
+        openapi_aliases = [alias for alias in _aliases_for(canonical_openapi) if alias != canonical_openapi]
+        docs_aliases = [alias for alias in _aliases_for(canonical_docs) if alias != canonical_docs]
+        healthz_aliases = [alias for alias in _aliases_for(canonical_healthz) if alias != canonical_healthz]
+
+        for path in [canonical_openapi, *openapi_aliases]:
+            super().add(path, handler=_schema, canonical_route=canonical_openapi, aliases=openapi_aliases)
+        for path in [canonical_docs, *docs_aliases, canonical_redoc]:
+            super().add(path, handler=_swagger, canonical_route=canonical_docs, aliases=docs_aliases)
+        for path in [canonical_healthz, *healthz_aliases]:
+            super().add(path, handler=_health, canonical_route=canonical_healthz, aliases=healthz_aliases)
+        for path in [canonical_ready, canonical_live]:
+            super().add(path, handler=_health, canonical_route=path, aliases=[])
         self.install = True
 
     def _trigger_set_handler(self, handler, *args, tags: list = None, description: str = None, summary: str = None,
