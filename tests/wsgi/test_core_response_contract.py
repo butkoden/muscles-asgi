@@ -51,3 +51,35 @@ def test_asgi_server_preserves_core_custom_content_type():
     headers = dict(response.headers)
     assert headers["Content-Type"] == "application/problem+json"
     assert headers["X-Trace-Id"] == "abc"
+
+
+def test_asgi_server_accepts_plain_dict_as_json():
+    server = AsgiServer(host="localhost", port=0, error_handler=Exception)
+    response = server._to_protocol_response({"ok": True, "nested": {"value": 1}})
+    assert isinstance(response, AsgiBaseResponse)
+    assert response.status == "200"
+    assert response.make_body() == b'{"ok": true, "nested": {"value": 1}}'
+    assert dict(response.headers)["Content-Type"] == "application/json; charset=utf-8"
+
+
+def test_asgi_server_accepts_plain_list_as_json():
+    server = AsgiServer(host="localhost", port=0, error_handler=Exception)
+    response = server._to_protocol_response([1, "a", {"b": True}])
+    assert response.make_body() == b'[1, "a", {"b": true}]'
+    assert response.status == "200"
+
+
+def test_asgi_server_accepts_tuple_with_json_body():
+    server = AsgiServer(host="localhost", port=0, error_handler=Exception)
+    response = server._to_protocol_response(({"ok": True}, 201, [("X", "Y")]))
+    assert response.status == "201"
+    assert response.make_body() == b'{"ok": true}'
+    assert dict(response.headers)["X"] == "Y"
+    assert dict(response.headers)["Content-Type"] == "application/json; charset=utf-8"
+
+
+def test_asgi_server_accepts_bytes_without_transform():
+    server = AsgiServer(host="localhost", port=0, error_handler=Exception)
+    response = server._to_protocol_response(b"abc")
+    assert response.make_body() == b"abc"
+    assert response.status == "200"

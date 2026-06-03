@@ -3,6 +3,7 @@ import io
 import traceback
 import inspect
 import logging
+from collections import OrderedDict
 
 from muscles.core import NotFoundException, ApplicationException, ErrorException
 from muscles.core import AttributeErrorException
@@ -171,9 +172,40 @@ class AsgiServer:
         self.logger = logger or logging.getLogger("muscles.asgi")
         self.debug = debug
         self._route_cache = {}
+        self.__controller_cache = OrderedDict()
+        self.__controller_cache_size = 128
 
         self.__transport = self.__transport_class()
         self.__transport.init_server(self)
+
+    @staticmethod
+    def __is_stateful_controller(handler):
+        controller = getattr(handler, 'controller', None)
+        if controller is None:
+            return False
+        return bool(getattr(handler, 'stateful_controller', False) or getattr(controller, 'stateful_controller', False))
+
+    def __get_controller_instance(self, handler):
+        if not hasattr(handler, 'controller'):
+            return None
+
+        controller_class = handler.controller
+
+        if self.__is_stateful_controller(handler):
+            return controller_class()
+
+        controller = self.__controller_cache.get(controller_class)
+        if controller is not None:
+            self.__controller_cache.move_to_end(controller_class)
+            return controller
+
+        controller = controller_class()
+        self.__controller_cache[controller_class] = controller
+        self.__controller_cache.move_to_end(controller_class)
+        if len(self.__controller_cache) > self.__controller_cache_size:
+            self.__controller_cache.popitem(last=False)
+
+        return controller
 
     def init_transport(self, transport):
         """
@@ -207,6 +239,25 @@ class AsgiServer:
     def _to_protocol_response(self, response, request=None):
         if isinstance(response, BaseResponse):
             return response
+
+        if isinstance(response, str):
+            return BaseResponse(status=200, body=response, request=request)
+        if isinstance(response, bytes):
+            return BaseResponse(status=200, body=response, request=request)
+        if isinstance(response, dict):
+            return BaseResponse(
+                status=200,
+                body=BaseResponse(body=response, request=request).make_body(),
+                request=request,
+                content_type='application/json; charset=utf-8',
+            )
+        if isinstance(response, list):
+            return BaseResponse(
+                status=200,
+                body=BaseResponse(body=response, request=request).make_body(),
+                request=request,
+                content_type='application/json; charset=utf-8',
+            )
         if isinstance(response, CoreBaseResponse):
             if response.redirect:
                 return BaseResponse.redirect(response.redirect, status=response.status)
@@ -220,17 +271,18 @@ class AsgiServer:
             )
 
         # Legacy path: keep transport-native serialization behavior.
-        if isinstance(response, str):
-            return BaseResponse(status=200, body=response, request=request)
-        if isinstance(response, bytes):
-            return BaseResponse(status=200, body=response, request=request)
-        if isinstance(response, dict):
-            return BaseResponse(status=200, body=response, request=request)
         if isinstance(response, tuple):
             kwargs = {}
             status = 200
             if len(response) >= 1:
-                kwargs["body"] = response[0]
+                if isinstance(response[0], dict):
+                    kwargs["body"] = BaseResponse(body=response[0], request=request).make_body()
+                    kwargs["content_type"] = 'application/json; charset=utf-8'
+                elif isinstance(response[0], list):
+                    kwargs["body"] = BaseResponse(body=response[0], request=request).make_body()
+                    kwargs["content_type"] = 'application/json; charset=utf-8'
+                else:
+                    kwargs["body"] = response[0]
             if len(response) >= 2:
                 status = response[1]
             if len(response) >= 3:
@@ -320,7 +372,8 @@ class AsgiServer:
             else:
                 try:
                     if hasattr(request.route['handler'], 'controller'):
-                        resp = request.route['handler'](request.route['handler'].controller(), request=request,
+                        handler_controller = self.__get_controller_instance(request.route['handler'])
+                        resp = request.route['handler'](handler_controller, request=request,
                                                         **dictionary)
                     else:
                         resp = request.route['handler'](request=request, **dictionary)
