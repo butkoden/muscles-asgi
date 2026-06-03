@@ -407,20 +407,23 @@ class AsgiServer:
             (request.content_type or "").lower(),
         )
         dictionary = {}
-        cached_instance = self._route_cache.get(route_key)
-        if cached_instance is not None:
-            call, dictionary = cached_instance.get_current_route(request)
-            if call:
-                request.route = call
+        cached_route = self._route_cache.get(route_key)
+        if cached_route is not None:
+            cached_instance, cached_call, dictionary = cached_route
+            if cached_call:
+                request.route = cached_call
                 request.itinerary = cached_instance
+            return dictionary
         if request.route is None:
             for _, instance in itinerary.instance_list():
                 call, dictionary = instance.get_current_route(request)
                 if call:
                     request.route = call
                     request.itinerary = instance
-                    self._route_cache[route_key] = instance
+                    self._route_cache[route_key] = (instance, call, dictionary)
                     break
+            if request.route is None:
+                self._route_cache[route_key] = (None, None, {})
         if request.route and 'instance' in request.route.keys():
             for func in request.route['instance'].get_event('before_request'):
                 func(request)
