@@ -365,7 +365,16 @@ class AsgiServer:
                     self.logger.exception("ASGI handler unexpected exception")
                     ae = ApplicationException(status=500, reason=ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
                     return await self.send_error(ae, request)
+        if self._has_matching_path(request.path):
+            return await self._make_response(BaseResponse(status=404, body={}, request=request))
         return await self.send_error(NotFoundException(status=404, reason="Not Found"), request)
+
+    def _has_matching_path(self, path: str) -> bool:
+        for _, instance in itinerary.instance_list():
+            route_node, _ = instance.match_with_params(path)
+            if route_node is not None:
+                return True
+        return False
 
     async def _make_response(self, response):
         """
