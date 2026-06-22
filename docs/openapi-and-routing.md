@@ -50,3 +50,33 @@ server and the ASGI strategy.
 
 Avoid copying routing logic into ASGI-specific schema modules. Shared indexes and
 match caches live in the core itinerary, so ASGI should reuse them directly.
+
+## Swagger/OpenAPI defaults
+
+`RestApi` uses these defaults:
+- `docs_url` = `/docs`
+- `swagger_url` = `/swagger`
+- `openapi_url` = `/openapi.json`
+- `schema_url` = `schema`
+- `prefix` = `/`
+
+By default the UI is reachable at `/swagger`, and OpenAPI JSON at `/openapi.json`.
+Compatibility aliases are also registered, so for the defaults you'll also get:
+- `/docs` as docs alias
+- `/schema` as openapi alias
+- `/healthz`, `/ready`, `/live` service endpoints
+
+When `prefix="/api/v1"` the same defaults become:
+- UI: `/api/v1/docs`, `/api/v1/swagger`, `/api/v1/redoc`
+- OpenAPI: `/api/v1/openapi.json`, `/api/v1/schema`
+
+You can override route names directly in `RestApi(...)`:
+```python
+api = RestApi(
+    prefix="/api/v1",
+    docs_url="/api-docs",
+    swagger_url="/api-docs",
+    openapi_url="/api-spec.json",
+    schema_url="/api-spec",
+)
+```
