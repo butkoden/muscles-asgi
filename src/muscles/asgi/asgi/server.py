@@ -250,6 +250,13 @@ class AsgiServer:
                 request=request,
                 content_type="application/problem+json",
             )
+        if isinstance(response, BaseException) and hasattr(response, "status"):
+            return BaseResponse(
+                status=getattr(response, "status"),
+                body=normalize_problem_payload(response, request=request, include_trace=self.debug),
+                request=request,
+                content_type="application/problem+json",
+            )
 
         if isinstance(response, str):
             return BaseResponse(status=200, body=response, request=request)
@@ -373,10 +380,14 @@ class AsgiServer:
                     return await self.send_error(ae, request)
                 except KeyError as ae:
                     self.logger.exception("ASGI handler key error")
+                    if self._has_exception_mapping(ae, request):
+                        return await self.send_error(ae, request)
                     ae = AttributeErrorException(status=500, reason="KeyError[%s]" % ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
                     return await self.send_error(ae, request)
                 except Exception as ae:
                     self.logger.exception("ASGI handler unexpected exception")
+                    if self._has_exception_mapping(ae, request):
+                        return await self.send_error(ae, request)
                     ae = ApplicationException(status=500, reason=ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
                     return await self.send_error(ae, request)
         if self._has_matching_path(request.path):
@@ -571,6 +582,23 @@ class AsgiServer:
                 return response
         return None
 
+    def _has_exception_mapping(self, error, request):
+        current_itinerary = getattr(request, "itinerary", None)
+        finder = getattr(current_itinerary, "_find_exception_error_mapping", None)
+        if finder is None:
+            return False
+        status, handler = finder(error)
+        return status is not None or handler is not None
+
+    def _prepare_error(self, err, request=None):
+        current_itinerary = getattr(request, "itinerary", None)
+        if current_itinerary is None:
+            return err, None
+        call = current_itinerary.get_current_error_handler(err)
+        if call and call.get("handler"):
+            return err, call
+        return err, None
+
     async def _run_security(self, request):
         handler = request.route["handler"]
         for security in getattr(handler, "security", []) or []:
@@ -665,6 +693,7 @@ class AsgiServer:
         :param request: Объект запроса
         :return:
         """
+        err, mapped_call = self._prepare_error(err, request=request)
         payload = normalize_problem_payload(err, request=request, include_trace=self.debug)
         status = payload.get("status", 500)
         title = payload.get("title")
@@ -712,10 +741,13 @@ class AsgiServer:
         # traceback.print_exc(file=sys.stdout)
         # call = routes.get_current_error_handler(resp)
 
-        for _, instance in itinerary.instance_list():
-            call = instance.get_current_error_handler(response)
-            if call:
-                response.body = call['handler'](response, request)
-                break
+        if mapped_call:
+            response.body = mapped_call['handler'](response, request)
+        else:
+            for _, instance in itinerary.instance_list():
+                call = instance.get_current_error_handler(response)
+                if call:
+                    response.body = call['handler'](response, request)
+                    break
 
         return await self.__transport.make_response(response)

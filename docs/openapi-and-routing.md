@@ -46,6 +46,30 @@ The ASGI tests use a small WSGI-compatible bridge for shared runtime scenarios.
 This is test support only: production applications should run through an ASGI
 server and the ASGI strategy.
 
+## Route Groups
+
+`RestApi.group()` registers routes with a shared prefix and inherited OpenAPI
+metadata:
+
+```python
+from muscles import BearerAuthSecurity, JsonResponseBody
+
+documents = api.group(
+    "/documents",
+    tags=["Documents"],
+    security=[BearerAuthSecurity()],
+    response={401: JsonResponseBody(description="Unauthorized")},
+)
+
+
+@documents.init("/{id}", method="GET", summary="Show document")
+def show(request, id):
+    return {"id": id}
+```
+
+The generated operation is emitted as `get`, includes `tags`, `security` and
+common responses, and registers the bearer scheme in OpenAPI components.
+
 ## Performance Notes
 
 Avoid copying routing logic into ASGI-specific schema modules. Shared indexes and

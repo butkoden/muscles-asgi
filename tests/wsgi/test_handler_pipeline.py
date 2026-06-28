@@ -85,6 +85,37 @@ def test_application_exception_status_is_preserved_in_protocol_response():
     assert response.status == "422"
 
 
+def test_exception_mapping_marks_original_exception_status():
+    itinerary = Itinerary(name="asgi-error-mapping")
+
+    def handler(response, request):
+        return {"mapped": response.status}
+
+    itinerary.map_error(ValueError, status=422, handler=handler)
+    server = AsgiServer(host="localhost", port=0, error_handler=Exception)
+    request = Request(lambda request: "ok")
+    request.itinerary = itinerary
+    error = ValueError("bad input")
+
+    mapped_error, mapped_call = server._prepare_error(error, request)
+    response = server._to_protocol_response(mapped_error, request=request)
+
+    assert mapped_error.status == 422
+    assert response.status == "422"
+    assert mapped_call["handler"](response, request) == {"mapped": "422"}
+
+
+def test_exception_mapping_is_detected_before_generic_wrapping():
+    itinerary = Itinerary(name="asgi-error-mapping-detect")
+    itinerary.map_error(PermissionError, status=403)
+    server = AsgiServer(host="localhost", port=0, error_handler=Exception)
+    request = Request(lambda request: "ok")
+    request.itinerary = itinerary
+
+    assert server._has_exception_mapping(PermissionError("no"), request) is True
+    assert server._has_exception_mapping(RuntimeError("boom"), request) is False
+
+
 def test_cors_preflight_response_for_matching_itinerary():
     itinerary = Itinerary(name="asgi-cors-preflight")
     itinerary.add_rule(RouteRuleDefault())
