@@ -48,6 +48,16 @@ class AsgiTransport(Transport):
     Транспорт стратегии ASGI
     """
 
+    def _asgi_headers(self, headers):
+        encoded = []
+        for key, value in headers:
+            if isinstance(key, str):
+                key = key.encode("latin-1")
+            if isinstance(value, str):
+                value = value.encode("latin-1")
+            encoded.append((key, value))
+        return encoded
+
     async def execute(self, *args, **kwargs):
         """
         Исполняем условия транспорта
@@ -111,7 +121,7 @@ class AsgiTransport(Transport):
                     await self.send({
                         'type': 'http.response.start',
                         'status': 204,  # Нет контента
-                        'headers': response.headers,
+                        'headers': self._asgi_headers(response.headers),
                     })
                     await self.send({
                         'type': 'http.response.body',
@@ -123,7 +133,7 @@ class AsgiTransport(Transport):
                     await self.send({
                         'type': 'http.response.start',
                         'status': int(response.status),
-                        'headers': response.headers
+                        'headers': self._asgi_headers(response.headers),
                     })
                     # Отправка тела ответа
                     await self.send({
@@ -395,7 +405,7 @@ class AsgiServer:
         return await self.send_error(NotFoundException(status=404, reason="Not Found"), request)
 
     def _has_matching_path(self, path: str) -> bool:
-        for _, instance in itinerary.instance_list():
+        for instance in self._runtime_instances():
             route_node, _ = instance.match_with_params(path)
             if route_node is not None:
                 return True
@@ -435,11 +445,16 @@ class AsgiServer:
 
     def _matching_path_instances(self, path: str):
         matched = []
-        for _, instance in itinerary.instance_list():
+        for instance in self._runtime_instances():
             route_node, _ = instance.match_with_params(path)
             if route_node is not None:
                 matched.append(instance)
         return matched
+
+    def _runtime_instances(self):
+        for _, instance in itinerary.instance_list():
+            if instance.__class__.__module__.startswith("muscles.asgi"):
+                yield instance
 
     def _cors_preflight_response(self, request):
         if (request.method or "").upper() != "OPTIONS":
@@ -470,7 +485,7 @@ class AsgiServer:
                 request.itinerary = cached_instance
             return dictionary
         if request.route is None:
-            for _, instance in itinerary.instance_list():
+            for instance in self._runtime_instances():
                 call, dictionary = instance.get_current_route(request)
                 if call:
                     request.route = call
@@ -747,7 +762,7 @@ class AsgiServer:
         if mapped_call:
             response.body = mapped_call['handler'](response, request)
         else:
-            for _, instance in itinerary.instance_list():
+            for instance in self._runtime_instances():
                 call = instance.get_current_error_handler(response)
                 if call:
                     response.body = call['handler'](response, request)

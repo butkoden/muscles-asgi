@@ -97,6 +97,10 @@ class RestApi(Itinerary):
     def _trigger_set_handler(self, handler, *args, tags: list = None, description: str = None, summary: str = None,
                              request: list = [], security: list = [], response: dict = {}, parameters: list = [],
                              **kwargs):
+        auth = kwargs.get("auth")
+        if auth is not None:
+            security = [] if auth is False else (auth if isinstance(auth, list) else [auth])
+            handler.security = security
         if not hasattr(handler, 'tags') or not handler.tags:
             handler.tags = tags or []
         if not hasattr(handler, 'description') or not handler.description:
@@ -105,7 +109,7 @@ class RestApi(Itinerary):
             handler.summary = summary
         if not hasattr(handler, 'request') or not handler.request:
             handler.request = request
-        if not hasattr(handler, 'security') or not handler.security:
+        if auth is None and (not hasattr(handler, 'security') or not handler.security):
             handler.security = security
         if not hasattr(handler, 'response') or not handler.response:
             handler.response = response
