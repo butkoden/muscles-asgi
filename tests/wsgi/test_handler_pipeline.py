@@ -1,0 +1,154 @@
+import asyncio
+from dataclasses import dataclass
+
+import pytest
+
+from muscles import ApplicationException, Dependency, cors
+from muscles.asgi.asgi.response import BaseResponse
+from muscles.asgi.asgi.routers import Itinerary, RouteRuleDefault
+from muscles.asgi.asgi.server import AsgiServer
+
+
+class Request:
+    def __init__(self, handler, body=None, path="/api/documents", method="POST"):
+        self.route = {"handler": handler}
+        self.itinerary = None
+        self.path = path
+        self.method = method
+        self.content_type = "application/json"
+        self.headers = {}
+        self.cookies = {}
+        self.query = {}
+        self.json = body if body is not None else {}
+
+
+@dataclass
+class CreateDocument:
+    title: str
+
+
+class StoreInterface:
+    pass
+
+
+@Dependency.init(StoreInterface)
+class Store(StoreInterface):
+    name = "documents"
+
+
+class RejectingSecurity:
+    def authenticate_header(self, value):
+        return None
+
+
+def test_call_handler_builds_typed_body_and_injects_dependency():
+    server = AsgiServer(host="localhost", port=0, error_handler=Exception)
+
+    def handler(body: CreateDocument, store: StoreInterface):
+        return {"title": body.title, "store": store.name}
+
+    result = asyncio.run(server._call_handler(Request(handler, {"title": "Spec"}), {}))
+
+    assert result == {"title": "Spec", "store": "documents"}
+
+
+def test_call_handler_uses_query_header_cookie_fallbacks():
+    server = AsgiServer(host="localhost", port=0, error_handler=Exception)
+
+    def handler(page, trace_id, session):
+        return page, trace_id, session
+
+    request = Request(handler, {})
+    request.query = {"page": "2"}
+    request.headers = {"Trace-Id": "abc"}
+    request.cookies = {"session": "cookie"}
+
+    result = asyncio.run(server._call_handler(request, {}))
+
+    assert result == ("2", "abc", "cookie")
+
+
+def test_call_handler_missing_required_argument_returns_validation_error():
+    server = AsgiServer(host="localhost", port=0, error_handler=Exception)
+
+    def handler(required):
+        return required
+
+    with pytest.raises(ApplicationException) as exc:
+        asyncio.run(server._call_handler(Request(handler, {}), {}))
+
+    assert exc.value.status == 422
+
+
+def test_application_exception_status_is_preserved_in_protocol_response():
+    server = AsgiServer(host="localhost", port=0, error_handler=Exception)
+    error = ApplicationException(status=422, reason="bad input")
+
+    response = server._to_protocol_response(error, request=None)
+
+    assert isinstance(response, BaseResponse)
+    assert response.status == "422"
+
+
+def test_exception_mapping_marks_original_exception_status():
+    itinerary = Itinerary(name="asgi-error-mapping")
+
+    def handler(response, request):
+        return {"mapped": response.status}
+
+    itinerary.map_error(ValueError, status=422, handler=handler)
+    server = AsgiServer(host="localhost", port=0, error_handler=Exception)
+    request = Request(lambda request: "ok")
+    request.itinerary = itinerary
+    error = ValueError("bad input")
+
+    mapped_error, mapped_call = server._prepare_error(error, request)
+    response = server._to_protocol_response(mapped_error, request=request)
+
+    assert mapped_error.status == 422
+    assert response.status == "422"
+    assert mapped_call["handler"](response, request) == {"mapped": "422"}
+
+
+def test_exception_mapping_is_detected_before_generic_wrapping():
+    itinerary = Itinerary(name="asgi-error-mapping-detect")
+    itinerary.map_error(PermissionError, status=403)
+    server = AsgiServer(host="localhost", port=0, error_handler=Exception)
+    request = Request(lambda request: "ok")
+    request.itinerary = itinerary
+
+    assert server._has_exception_mapping(PermissionError("no"), request) is True
+    assert server._has_exception_mapping(RuntimeError("boom"), request) is False
+
+
+def test_auth_false_route_skips_matching_guards_and_security():
+    itinerary = Itinerary(name="asgi-auth-override")
+    itinerary.guard("/api/**", lambda request: {"error": "unauthorized"}, 401)
+    server = AsgiServer(host="localhost", port=0, error_handler=Exception)
+
+    def handler(request):
+        return "ok"
+
+    handler.auth = False
+    handler.security = [RejectingSecurity()]
+    request = Request(handler, path="/api/login")
+    request.itinerary = itinerary
+    request.route = {"handler": handler}
+
+    assert asyncio.run(server._run_guards(request)) is None
+    asyncio.run(server._run_security(request))
+
+
+def test_cors_preflight_response_for_matching_itinerary():
+    itinerary = Itinerary(name="asgi-cors-preflight")
+    itinerary.add_rule(RouteRuleDefault())
+    itinerary.add("/cors-preflight", handler=lambda request: "ok", method="GET")
+    itinerary.use(cors(allow_origins=["https://app.example"], allow_methods=["GET"]))
+    server = AsgiServer(host="localhost", port=0, error_handler=Exception)
+    request = Request(lambda request: "ok", path="/cors-preflight", method="OPTIONS")
+    request.origin = "https://app.example"
+
+    response = server._cors_preflight_response(request)
+
+    assert response.status == 204
+    assert response.headers["Access-Control-Allow-Origin"] == "https://app.example"

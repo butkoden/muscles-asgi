@@ -97,6 +97,8 @@ class RestApi(Itinerary):
     def _trigger_set_handler(self, handler, *args, tags: list = None, description: str = None, summary: str = None,
                              request: list = [], security: list = [], response: dict = {}, parameters: list = [],
                              **kwargs):
+        if not hasattr(handler, 'tags') or not handler.tags:
+            handler.tags = tags or []
         if not hasattr(handler, 'description') or not handler.description:
             handler.description = description
         if not hasattr(handler, 'summary') or not handler.summary:
@@ -111,6 +113,12 @@ class RestApi(Itinerary):
             handler.parameters = parameters
         else:
             handler.parameters = handler.parameters + parameters
+        for key, value in kwargs.items():
+            if key.startswith("_"):
+                continue
+            if value in (None, [], {}, "") and hasattr(handler, key):
+                continue
+            setattr(handler, key, value)
 
         return handler
 

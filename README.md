@@ -35,6 +35,8 @@ paths include the external API prefix, so a mounted route such as
 `/api/v1/bookings` appears in Swagger exactly as clients must call it.
 
 More detail: [docs/openapi-and-routing.md](docs/openapi-and-routing.md).
+Backend pipeline features are documented in
+[docs/backend-pipeline.md](docs/backend-pipeline.md).
 
 ## Request Handling
 
