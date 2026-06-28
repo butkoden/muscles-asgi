@@ -85,7 +85,7 @@ class BaseResponse:
                 return dictionary.to_json()
             else:
                 return dictionary
-        body = self.body or self.errors
+        body = self.body if self.body not in (None, '') else self.errors
         if self.type in ['json'] or isinstance(body, dict):
             try:
                 body = _recursive_dict_adapt(body)
