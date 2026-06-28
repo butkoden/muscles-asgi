@@ -1,7 +1,9 @@
 from muscles import HtmlResponse as CoreHtmlResponse
 from muscles import BaseResponse as CoreBaseResponse
 from muscles import JsonResponse as CoreJsonResponse
+from muscles import NoContentResponse as CoreNoContentResponse
 from muscles.asgi.asgi.response import BaseResponse as AsgiBaseResponse
+from muscles.asgi.asgi.server import AsgiTransport
 from muscles.asgi.asgi.server import AsgiServer
 
 
@@ -19,6 +21,21 @@ def test_asgi_server_accepts_core_html_response():
     assert isinstance(response, AsgiBaseResponse)
     assert response.status == "200"
     assert response.make_body() == b"<h1>ok</h1>"
+
+
+def test_asgi_server_accepts_core_no_content_response_without_body():
+    server = AsgiServer(host="localhost", port=0, error_handler=Exception)
+    response = server._to_protocol_response(CoreNoContentResponse())
+
+    assert isinstance(response, AsgiBaseResponse)
+    assert response.status == "204"
+    assert response.make_body() == b""
+
+
+def test_asgi_transport_encodes_string_headers_for_protocol_messages():
+    transport = AsgiTransport()
+
+    assert transport._asgi_headers([("Content-Type", "text/plain")]) == [(b"Content-Type", b"text/plain")]
 
 
 def test_asgi_server_keeps_legacy_protocol_response():
