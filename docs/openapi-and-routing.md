@@ -70,6 +70,17 @@ def show(request, id):
 The generated operation is emitted as `get`, includes `tags`, `security` and
 common responses, and registers the bearer scheme in OpenAPI components.
 
+Endpoint metadata can override inherited auth:
+
+```python
+@documents.init("/login", method="POST", auth=False)
+def login(request):
+    return {"token": "issued-token"}
+```
+
+`auth=False` clears inherited security for that operation and tells the ASGI
+pipeline to skip matching auth guards.
+
 ## Performance Notes
 
 Avoid copying routing logic into ASGI-specific schema modules. Shared indexes and

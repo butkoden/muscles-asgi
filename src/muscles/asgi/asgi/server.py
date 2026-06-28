@@ -600,6 +600,9 @@ class AsgiServer:
         return err, None
 
     async def _run_security(self, request):
+        is_auth_disabled = getattr(getattr(request, "itinerary", None), "is_auth_disabled", None)
+        if is_auth_disabled and is_auth_disabled(request.route):
+            return
         handler = request.route["handler"]
         for security in getattr(handler, "security", []) or []:
             if not hasattr(security, "authenticate_header"):

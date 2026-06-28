@@ -36,6 +36,11 @@ class Store(StoreInterface):
     name = "documents"
 
 
+class RejectingSecurity:
+    def authenticate_header(self, value):
+        return None
+
+
 def test_call_handler_builds_typed_body_and_injects_dependency():
     server = AsgiServer(host="localhost", port=0, error_handler=Exception)
 
@@ -114,6 +119,24 @@ def test_exception_mapping_is_detected_before_generic_wrapping():
 
     assert server._has_exception_mapping(PermissionError("no"), request) is True
     assert server._has_exception_mapping(RuntimeError("boom"), request) is False
+
+
+def test_auth_false_route_skips_matching_guards_and_security():
+    itinerary = Itinerary(name="asgi-auth-override")
+    itinerary.guard("/api/**", lambda request: {"error": "unauthorized"}, 401)
+    server = AsgiServer(host="localhost", port=0, error_handler=Exception)
+
+    def handler(request):
+        return "ok"
+
+    handler.auth = False
+    handler.security = [RejectingSecurity()]
+    request = Request(handler, path="/api/login")
+    request.itinerary = itinerary
+    request.route = {"handler": handler}
+
+    assert asyncio.run(server._run_guards(request)) is None
+    asyncio.run(server._run_security(request))
 
 
 def test_cors_preflight_response_for_matching_itinerary():

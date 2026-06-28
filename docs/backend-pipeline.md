@@ -65,6 +65,17 @@ api.map_error(PermissionError, status=403)
 api.map_error(ValueError, status=422)
 ```
 
+Use endpoint-level `auth=False` for public endpoints inside a protected API:
+
+```python
+@api.init("/api/login", method="post", auth=False)
+def login(request):
+    return {"token": "issued-token"}
+```
+
+ASGI skips matching guards and route-level security for endpoints marked with
+`auth=False`.
+
 If a handler raises a mapped exception, ASGI preserves the mapped status before
 creating the problem response.
 
