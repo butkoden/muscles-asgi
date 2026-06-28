@@ -1,5 +1,6 @@
 import io
 import os
+import asyncio
 
 from muscles import JsonResponseBody
 from muscles import XmlResponseBody
@@ -12,6 +13,7 @@ from muscles import Context
 from muscles import ApplicationMeta
 from muscles import Configurator
 from muscles import Model, Column, Key, Numeric, List, String, Enum, Date, DateTime
+from muscles.asgi.asgi.request import RequestMaker
 
 
 def start_response(status, headers):
@@ -101,6 +103,29 @@ class Muscular(metaclass=ApplicationMeta):
 
 
 muscular = Muscular()
+
+
+async def _empty_receive():
+    return {"type": "http.request", "body": b"", "more_body": False}
+
+
+def test_request_maker_normalizes_path_and_keeps_query_string():
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "scheme": "http",
+        "path": "//api//documents//",
+        "raw_path": b"//api//documents//",
+        "query_string": b"page=1",
+        "headers": [(b"host", b"example.test")],
+        "server": ("example.test", 80),
+        "client": ("127.0.0.1", 1234),
+    }
+
+    request = asyncio.run(RequestMaker(scope, _empty_receive).make())
+
+    assert request.path == "/api/documents"
+    assert request.query == {"page": "1"}
 
 
 @muscular.api1.controller('/test_request',

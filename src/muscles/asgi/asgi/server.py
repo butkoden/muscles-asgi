@@ -2,12 +2,14 @@ import os
 import io
 import traceback
 import logging
+import inspect
+from dataclasses import is_dataclass
 from inspect import iscoroutinefunction
 from collections import OrderedDict
 
 from muscles.core import NotFoundException, ApplicationException, ErrorException
 from muscles.core import AttributeErrorException
-from muscles.core import inject, EventsStorageInterface
+from muscles.core import Dependency, inject, EventsStorageInterface
 from muscles.core import BaseResponse as CoreBaseResponse
 from muscles.core import normalize_problem_payload
 from .request import RequestMaker
@@ -241,6 +243,14 @@ class AsgiServer:
         if isinstance(response, BaseResponse):
             return response
 
+        if isinstance(response, ApplicationException):
+            return BaseResponse(
+                status=response.status,
+                body=response.body or {"error": str(response.reason)},
+                request=request,
+                content_type="application/problem+json",
+            )
+
         if isinstance(response, str):
             return BaseResponse(status=200, body=response, request=request)
         if isinstance(response, bytes):
@@ -342,12 +352,16 @@ class AsgiServer:
                 return await self._make_response(BaseResponse.redirect(request.route['redirect']))
             else:
                 try:
-                    handler_response = await self._call_handler(request, dictionary)
+                    guard_response = await self._run_guards(request)
+                    if guard_response is not None:
+                        return await self._make_response(self._convert_response(guard_response, request=request))
+                    await self._run_security(request)
+                    handler_response = await self._call_route_handler(request, dictionary)
                     response = self._convert_response(handler_response, request=request)
                     return await self._make_response(response)
                 except ApplicationException as ae:
                     self.logger.exception("ASGI application exception")
-                    ae = ApplicationException(status=400, reason=ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
+                    ae = ApplicationException(status=ae.status, reason=ae.reason, body=ae.body, traceback=traceback.format_tb(ae.__traceback__))
                     return await self.send_error(ae, request)
                 except ErrorException as ae:
                     self.logger.exception("ASGI error exception")
@@ -394,6 +408,10 @@ class AsgiServer:
         if request.type == 'lifespan' or request.type is None:
             return BaseResponse(status=200, body=None, request=request)
 
+        cors_response = self._cors_preflight_response(request)
+        if cors_response is not None:
+            return self._to_protocol_response(cors_response, request=request)
+
         before_request = evnetStorage.get('before_request')
         if before_request:
             for handler in before_request:
@@ -402,6 +420,23 @@ class AsgiServer:
                     if isinstance(resp, str):
                         return BaseResponse(status=200, body=resp, request=request)
                     return resp
+        return None
+
+    def _matching_path_instances(self, path: str):
+        matched = []
+        for _, instance in itinerary.instance_list():
+            route_node, _ = instance.match_with_params(path)
+            if route_node is not None:
+                matched.append(instance)
+        return matched
+
+    def _cors_preflight_response(self, request):
+        if (request.method or "").upper() != "OPTIONS":
+            return None
+        for instance in self._matching_path_instances(request.path):
+            for middleware in getattr(instance, "get_middlewares", lambda: [])():
+                if getattr(middleware, "is_cors_middleware", False):
+                    return middleware.preflight_response(request)
         return None
 
     def _resolve_route(self, request):
@@ -438,6 +473,135 @@ class AsgiServer:
                 func(request)
         return dictionary
 
+    async def _maybe_await(self, value):
+        if inspect.isawaitable(value):
+            return await value
+        return value
+
+    def _header_lookup(self, headers, name):
+        wanted = name.replace("_", "-").lower()
+        for key, value in (headers or {}).items():
+            if key.replace("_", "-").lower() == wanted:
+                return value
+        return None
+
+    def _coerce_value(self, annotation, value):
+        if annotation is inspect._empty or value is None:
+            return value
+        try:
+            if annotation in (str, int, float, bool):
+                return annotation(value)
+        except Exception as exc:
+            raise ApplicationException(status=422, reason=f"Invalid value for {annotation}", body=str(exc))
+        return value
+
+    def _coerce_body(self, annotation, payload):
+        if annotation is inspect._empty:
+            return payload
+        if annotation in (dict, list, str, int, float, bool):
+            return payload
+        try:
+            if hasattr(annotation, "model_validate"):
+                return annotation.model_validate(payload)
+            if hasattr(annotation, "parse_obj"):
+                return annotation.parse_obj(payload)
+            if is_dataclass(annotation):
+                return annotation(**(payload or {}))
+            if inspect.isclass(annotation) and isinstance(payload, dict):
+                return annotation(**payload)
+        except Exception as exc:
+            raise ApplicationException(status=422, reason="Request body validation failed", body=str(exc))
+        return payload
+
+    def _resolve_dependency(self, annotation):
+        if annotation is inspect._empty:
+            return None
+        try:
+            return Dependency.resolve(annotation)
+        except Exception:
+            return None
+
+    def _build_handler_kwargs(self, handler, request, dictionary):
+        signature = inspect.signature(handler)
+        kwargs = {}
+        for name, param in signature.parameters.items():
+            if name == "self":
+                continue
+            if name == "request":
+                kwargs[name] = request
+                continue
+            if name in dictionary:
+                kwargs[name] = self._coerce_value(param.annotation, dictionary[name])
+                continue
+
+            dependency = self._resolve_dependency(param.annotation)
+            if dependency is not None:
+                kwargs[name] = dependency
+                continue
+
+            if name == "body":
+                kwargs[name] = self._coerce_body(param.annotation, getattr(request, "json", None))
+                continue
+
+            query = getattr(request, "query", {}) or {}
+            if name in query:
+                kwargs[name] = self._coerce_value(param.annotation, query[name])
+                continue
+
+            header_value = self._header_lookup(getattr(request, "headers", {}) or {}, name)
+            if header_value is not None:
+                kwargs[name] = self._coerce_value(param.annotation, header_value)
+                continue
+
+            cookies = getattr(request, "cookies", {}) or {}
+            if name in cookies:
+                kwargs[name] = self._coerce_value(param.annotation, cookies[name])
+                continue
+
+            if param.default is inspect._empty:
+                raise ApplicationException(status=422, reason=f"Missing required handler argument `{name}`")
+        return kwargs
+
+    async def _run_guards(self, request):
+        if not getattr(request, "itinerary", None) or not hasattr(request.itinerary, "get_guards"):
+            return None
+        for guard in request.itinerary.get_guards(request):
+            response = await self._maybe_await(guard(request))
+            if response is not None:
+                return response
+        return None
+
+    async def _run_security(self, request):
+        handler = request.route["handler"]
+        for security in getattr(handler, "security", []) or []:
+            if not hasattr(security, "authenticate_header"):
+                continue
+            result = security.authenticate_header(self._header_lookup(request.headers, "Authorization"))
+            if result is None:
+                raise ApplicationException(status=401, reason="Unauthorized")
+            request.actor = result.get("user")
+
+    async def _call_route_handler(self, request, dictionary):
+        middlewares = []
+        if getattr(request, "itinerary", None) and hasattr(request.itinerary, "get_middlewares"):
+            middlewares = request.itinerary.get_middlewares()
+
+        async def call_next(req):
+            return await self._call_handler(req, dictionary)
+
+        next_call = call_next
+        for middleware in reversed(middlewares):
+            current_next = next_call
+
+            async def wrapped(req, middleware=middleware, current_next=current_next):
+                if getattr(middleware, "is_cors_middleware", False):
+                    response = await current_next(req)
+                    return middleware.apply(response, req)
+                return await self._maybe_await(middleware(req, current_next))
+
+            next_call = wrapped
+        return await next_call(request)
+
     async def _call_handler(self, request, dictionary):
         """
         Вызов бизнес-обработчика маршрута.
@@ -446,15 +610,16 @@ class AsgiServer:
         :return: Результат обработчика
         """
         handler = request.route['handler']
+        kwargs = self._build_handler_kwargs(handler, request, dictionary)
         if hasattr(handler, 'controller'):
             handler_controller = self.__get_controller_instance(handler)
             if iscoroutinefunction(handler):
-                return await handler(handler_controller, request=request, **dictionary)
-            return handler(handler_controller, request=request, **dictionary)
+                return await handler(handler_controller, **kwargs)
+            return handler(handler_controller, **kwargs)
 
         if iscoroutinefunction(handler):
-            return await handler(request=request, **dictionary)
-        return handler(request=request, **dictionary)
+            return await handler(**kwargs)
+        return handler(**kwargs)
 
     def _convert_response(self, response, request):
         """

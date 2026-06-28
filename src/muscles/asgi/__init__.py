@@ -7,6 +7,7 @@ from .restful import *
 from .assets import *
 from .app import MuscularAsgiApp, asgi_app
 from .providers import AsgiGeneratorProvider
+from .testing import TestClient, TestResponse
 
 
 __all__ = (
@@ -51,4 +52,6 @@ __all__ = (
     "MuscularAsgiApp",
     "asgi_app",
     "AsgiGeneratorProvider",
+    "TestClient",
+    "TestResponse",
 )

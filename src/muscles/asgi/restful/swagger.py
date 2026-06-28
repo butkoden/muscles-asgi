@@ -72,11 +72,15 @@ class Swagger(Schema):
 
     @staticmethod
     def load(url):
+        matched = []
         for key in Swagger._instances:
             instance = Swagger._instances[key]
             if isinstance(instance, Swagger):
                 if instance.prefix in url:
-                    return Swagger(name=instance.name)
+                    matched.append(instance)
+        if matched:
+            matched.sort(key=lambda item: len(item.prefix or ""), reverse=True)
+            return Swagger(name=matched[0].name)
         return None
 
     def dump(self) -> dict:
@@ -132,12 +136,14 @@ class Swagger(Schema):
 
     def _dump_securitySchemes(self):
         _security = {}
-        if len(self.security) > 0:
-            for item in self.security:
-                if isinstance(item, BaseSecurity):
-                    _security.update(item.dump())
-                if isinstance(item, type):
-                    _security.update(item().dump())
+        security_items = list(self.security)
+        for handler in self.handlers:
+            security_items.extend(getattr(handler, "security", []) or [])
+        for item in security_items:
+            if isinstance(item, BaseSecurity):
+                _security.update(item.dump())
+            if isinstance(item, type) and issubclass(item, BaseSecurity):
+                _security.update(item().dump())
         return _security
 
     def _dump_security(self, securities):
@@ -146,6 +152,11 @@ class Swagger(Schema):
             for item in securities:
                 if isinstance(item, BaseSecurity):
                     _security.append({item.key: item.scope})
+                elif isinstance(item, type) and issubclass(item, BaseSecurity):
+                    security = item()
+                    _security.append({security.key: security.scope})
+                elif isinstance(item, str):
+                    _security.append({item: []})
         return _security
 
     def _dump_paths(self):
@@ -162,6 +173,7 @@ class Swagger(Schema):
                 method = handler_name
             elif method is None:
                 method = 'get'
+            method = method.lower()
 
             if hasattr(handler, 'tags') and len(handler.tags) > 0:
                 tags = handler.tags
