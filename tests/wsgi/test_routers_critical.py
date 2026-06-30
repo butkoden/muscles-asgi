@@ -32,6 +32,20 @@ def test_route_registration_and_lookup_by_method_and_type():
     assert params == {"id": "7"}
 
 
+def test_same_path_can_use_distinct_keys_per_method():
+    itinerary = _make_itinerary("asgi-router-distinct-method-keys")
+    get_handler = itinerary.add("/items", key="items.list", handler=_handler, method="GET")
+    post_handler = itinerary.add("/items", key="items.create", handler=_handler, method="POST")
+
+    get_route, _ = itinerary.get_current_route(Request("/items", method="GET"))
+    post_route, _ = itinerary.get_current_route(Request("/items", method="POST"))
+
+    assert get_route["handler"] is get_handler
+    assert get_route["key"] == "items.list"
+    assert post_route["handler"] is post_handler
+    assert post_route["key"] == "items.create"
+
+
 def test_static_registration_and_lookup():
     itinerary = _make_itinerary("asgi-router-critical-2")
     itinerary.add_static("static", prefix="/assets", handler=_handler)
