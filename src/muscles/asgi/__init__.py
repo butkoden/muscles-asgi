@@ -6,6 +6,7 @@ from .template import *
 from .restful import *
 from .assets import *
 from .app import MuscularAsgiApp, asgi_app
+from .action_bridge import ActionAsgiAdapter
 from .providers import AsgiGeneratorProvider
 from .testing import TestClient, TestResponse
 
@@ -51,6 +52,7 @@ __all__ = (
     "itinerary",
     "MuscularAsgiApp",
     "asgi_app",
+    "ActionAsgiAdapter",
     "AsgiGeneratorProvider",
     "TestClient",
     "TestResponse",
