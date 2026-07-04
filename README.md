@@ -8,6 +8,15 @@ while using ASGI scopes/events for async-capable servers.
 Canonical ecosystem install matrix is documented in core:
 [Muscles installation matrix](https://github.com/butkoden/muscles/blob/master/docs/installation.md).
 
+## Related Repositories
+
+- [`muscles`](https://github.com/butkoden/muscles) - core contracts, routing, actions and canonical documentation.
+- [`muscles-wsgi`](https://github.com/butkoden/muscles-wsgi) - WSGI runtime with the same application model.
+- [`muscles-cli`](https://github.com/butkoden/muscles-cli) - CLI projection and developer commands.
+- [`muscles-sse`](https://github.com/butkoden/muscles-sse) - streaming projection for action results.
+- [`muscles-mcp`](https://github.com/butkoden/muscles-mcp) - MCP projection that can bind to ASGI entrypoints.
+- [`muscles-benchmarks`](https://github.com/butkoden/muscles-benchmarks) - ASGI regression and architecture checks.
+
 ## Runtime
 
 An app binds `Context` to `AsgiStrategy`:
