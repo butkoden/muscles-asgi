@@ -8,8 +8,9 @@ class Asset:
 
     _installed = {}
     _instances = {}
+    _initialized = False
 
-    def __call__(cls, *args, **kwargs):
+    def __call__(self, *args, **kwargs):
         """
         Данная реализация не учитывает возможное изменение передаваемых
         аргументов в `__init__`
@@ -18,14 +19,14 @@ class Asset:
         :param kwargs:
         :return:
         """
-        if cls not in cls._instances:
-            instance = super().__call__(*args, **kwargs)
-            cls._instances[cls] = instance
-        return cls._instances[cls]
+        return self
 
     def __init__(self):
+        if self.__class__._initialized:
+            return
         path = os.path.dirname(os.path.abspath(muscles.core.__file__))
         routes.add_static('/'.join([path, 'assets']), prefix='/mus', full_path=True)
+        self.__class__._initialized = True
 
     def add(self, tag=None, file=None, body=None, id=None, dependency=None):
         hash = hashlib.sha256()
@@ -52,7 +53,7 @@ class Asset:
 
     def compile(self, tag=None):
         if tag is None:
-            raise 'Tag not set for compile options'
+            raise ValueError('Tag not set for compile options')
         if tag == 'js':
             return self.js_compile()
         elif tag == 'style':

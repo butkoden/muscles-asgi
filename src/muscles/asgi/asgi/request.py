@@ -1,22 +1,28 @@
+from __future__ import annotations
+
 import asyncio
-import traceback
-import urllib
+import urllib.parse as urllib_parse
 from urllib.parse import urlparse, urlunparse, parse_qs
 from operator import itemgetter
 import re
+from collections.abc import Iterable
+from typing import Any, TypeAlias, cast
 
 from muscles.core import Dependency
 from muscles.core import EventsStorageInterface
 from muscles.core import inject
 import json
-import sys
 import email.parser
 import email.policy
 import tempfile
 import os
 from http.cookies import SimpleCookie
-from muscles.core import normalize_path
+from muscles.core.route_contract import normalize_path
 from .error_handler import ApplicationException, AttributeException
+
+
+RequestBodyValue = Any
+FormValue: TypeAlias = "FileStorage | FieldStorage | list[FileStorage | FieldStorage]"
 
 try:
     import magic
@@ -24,7 +30,7 @@ except ImportError:
     magic = None
 
 
-def detect_mime_from_buffer(value):
+def detect_mime_from_buffer(value: bytes) -> str:
     if magic is None:
         return 'application/octet-stream'
     try:
@@ -33,11 +39,11 @@ def detect_mime_from_buffer(value):
         return 'application/octet-stream'
 
 
-def normalize_mime_type(value):
+def normalize_mime_type(value: str) -> str:
     return 'image/jpeg' if value == 'image/jpg' else value
 
 
-def _split_on_find(content, bound):
+def _split_on_find(content: bytes, bound: bytes) -> tuple[bytes, bytes]:
     point = content.find(bound)
     return content[:point], content[point + len(bound):]
 
@@ -50,11 +56,9 @@ class NonMultipartContentTypeException(Exception):
     pass
 
 
-def _header_parser(string, encoding):
-    major = sys.version_info[0]
-    if major == 3:
-        string = string.decode(encoding)
-    headers = email.parser.HeaderParser().parsestr(string).items()
+def _header_parser(string: bytes, encoding: str) -> Iterable[tuple[str, str]]:
+    text = string.decode(encoding)
+    headers = email.parser.HeaderParser().parsestr(text).items()
     return (
         (k, v) for k, v in headers
     )
@@ -66,7 +70,7 @@ class BodyPart(object):
 
     """
 
-    def __init__(self, content, encoding):
+    def __init__(self, content: bytes, encoding: str):
         self.encoding = encoding
         headers = {}
         # Split into header section (if any) and the content
@@ -79,8 +83,8 @@ class BodyPart(object):
                 'content does not contain CR-LF-CR-LF'
             )
         self.headers = headers or {}
-        self._name = None
-        self._filename = None
+        self._name: str | None = None
+        self._filename: str | None = None
         for k, v in self.headers:
             if k == 'Content-Disposition':
                 v = v.split("; ")
@@ -106,10 +110,7 @@ class BodyPart(object):
         Имя раздела в unicode.
         :return: unicode
         """
-        try:
-            return self._name.decode(self.encoding)
-        except:
-            return self._name
+        return self._name
 
     @property
     def filename(self):
@@ -117,10 +118,7 @@ class BodyPart(object):
         Имя файла
         :return: unicode
         """
-        try:
-            return self._filename.decode(self.encoding)
-        except:
-            return self._filename
+        return self._filename
 
 
 class FileStorage:
@@ -128,7 +126,15 @@ class FileStorage:
     Хранилище файлов
     """
 
-    def __init__(self, name, value, filename=None, mime_type=None, file_type=None, bytes_read=0):
+    def __init__(
+        self,
+        name: str | None,
+        value: bytes,
+        filename: str | None = None,
+        mime_type: str | None = None,
+        file_type: str | None = None,
+        bytes_read: int = 0,
+    ):
         self._name = name
         self._value = value
         # TODO Если оставить сохранение в файл то открывается уязвимость переполнения файловой системы,
@@ -227,21 +233,22 @@ class FileStorage:
     def __exit__(self, *args):
         self.fp.close()
 
-    def save(self, filepath=None, safe=False):
+    def save(self, filepath: str | os.PathLike[str] | None = None, safe: bool = False):
         """
         Сохраняет файл по указаному пути
         :param filepath: путь сохранения файла
         :return: None
         """
-        if safe and filepath is not None and os.path.isdir(filepath):
-            filepath = os.path.join(filepath, self.safe_filename)
-        self._filepath = os.path.abspath(filepath)
+        target_path = filepath if filepath is not None else self._filepath
+        if safe and os.path.isdir(target_path):
+            target_path = os.path.join(target_path, self.safe_filename)
+        self._filepath = os.path.abspath(target_path)
         self._filename = os.path.basename(self._filepath)
         self.fp.seek(0)
-        with open(filepath, 'wb') as fp:
+        with open(self._filepath, 'wb') as fp:
             fp.write(self.fp.read())
         self.fp.close()
-        self.fp = open(filepath, 'rb')
+        self.fp = open(self._filepath, 'rb')
         return self._filepath
 
 
@@ -281,21 +288,22 @@ class FieldStorage:
         return self
 
 
-def parse_multipart_body(content_type, body, encoding='utf-8'):
-    fields = {}
+def parse_multipart_body(content_type: str, body: bytes, encoding: str = 'utf-8') -> dict[str, FormValue]:
+    fields: dict[str, FormValue] = {}
     raw_message = (
         "Content-Type: %s\r\nMIME-Version: 1.0\r\n\r\n" % content_type
     ).encode(encoding) + body
     message = email.parser.BytesParser(policy=email.policy.default).parsebytes(raw_message)
     for part in message.iter_parts():
         name = part.get_param('name', header='content-disposition')
-        if not name:
+        if not isinstance(name, str) or not name:
             continue
-        payload = part.get_payload(decode=True) or b''
+        raw_payload = part.get_payload(decode=True) or b''
+        payload = raw_payload if isinstance(raw_payload, bytes) else str(raw_payload).encode(encoding)
         filename = part.get_filename()
         if filename is not None:
             content_type = normalize_mime_type(part.get_content_type())
-            value = FileStorage(
+            value: FileStorage | FieldStorage = FileStorage(
                 name,
                 payload,
                 filename=filename,
@@ -308,9 +316,11 @@ def parse_multipart_body(content_type, body, encoding='utf-8'):
             value = FieldStorage(name, payload.decode(charset))
 
         if name in fields:
-            if not isinstance(fields[name], list):
-                fields[name] = [fields[name]]
-            fields[name].append(value)
+            current = fields[name]
+            if isinstance(current, list):
+                current.append(value)
+            else:
+                fields[name] = [current, value]
         else:
             fields[name] = value
     return fields
@@ -325,18 +335,18 @@ class Request:
     _before_start = []
 
     def __init__(self,
-                 type: str = None,
-                 protocol: str = None,
-                 url: str = None,
-                 method: tuple = None,
-                 server: tuple = None,
-                 remote_addr: tuple = None,
-                 headers: dict = None,
-                 body=None,
-                 is_json=False,
-                 is_xml=False,
-                 is_form=False,
-                 is_buffer=False,
+                 type: str | None = None,
+                 protocol: str | None = None,
+                 url: str | None = None,
+                 method: str | None = None,
+                 server: tuple[str, int] | None = None,
+                 remote_addr: tuple[str, int] | None = None,
+                 headers: dict[str, Any] | None = None,
+                 body: RequestBodyValue = None,
+                 is_json: bool = False,
+                 is_xml: bool = False,
+                 is_form: bool = False,
+                 is_buffer: bool = False,
                  **kwargs
                  ):
         """
@@ -353,7 +363,7 @@ class Request:
         """
 
         #: Parsed parts of the multipart response body
-        self.parts = tuple()
+        self.parts: tuple[BodyPart, ...] = tuple()
 
         self.type = type
         self._is_json = is_json
@@ -366,7 +376,7 @@ class Request:
         #: The Protocol
         self.protocol = protocol.upper() if protocol is not None else None
         #: The URL
-        self.url = url
+        self.url = url or ""
         #: The address of the server. ``(host, port)``, ``(path, None)``
         #: for unix sockets, or ``None`` if not known.
         self.server = server
@@ -403,8 +413,8 @@ class Request:
                 func(request=self)
 
     @staticmethod
-    @inject(EventsStorageInterface)
-    def init_request(evnetStorage: EventsStorageInterface):
+    @inject(progressive=False)
+    def init_request(evnetStorage=Dependency(EventsStorageInterface)):
         """
         Декоратор, который вешает событие инициализации запроса Request
 
@@ -412,13 +422,13 @@ class Request:
         """
 
         def decorator(func):
-            evnetStorage.add('init_request', func)
+            cast(Any, evnetStorage).add('init_request', func)
 
         return decorator
 
     @staticmethod
-    @inject(EventsStorageInterface)
-    def before_request(evnetStorage: EventsStorageInterface):
+    @inject(progressive=False)
+    def before_request(evnetStorage=Dependency(EventsStorageInterface)):
         """
         Декоратор, который вешает событие инициализации запроса Request
 
@@ -426,13 +436,13 @@ class Request:
         """
 
         def decorator(func):
-            evnetStorage.add('before_request', func)
+            cast(Any, evnetStorage).add('before_request', func)
 
         return decorator
 
     @staticmethod
-    @inject(EventsStorageInterface)
-    def before_response(evnetStorage: EventsStorageInterface):
+    @inject(progressive=False)
+    def before_response(evnetStorage=Dependency(EventsStorageInterface)):
         """
         Декоратор, который вешает событие инициализации запроса Request
 
@@ -440,19 +450,19 @@ class Request:
         """
 
         def decorator(func):
-            evnetStorage.add('before_response', func)
+            cast(Any, evnetStorage).add('before_response', func)
 
         return decorator
 
     @property
-    def origin(self) -> str:
+    def origin(self) -> str | None:
         """
         HTTP Метод
         """
         return self.headers.get('Origin', None)
 
     @property
-    def prefix(self) -> bool:
+    def prefix(self) -> str | None:
         """
         Префикс к адресу
         """
@@ -460,7 +470,7 @@ class Request:
         return chunks[1] if len(chunks) > 0 and chunks[0] == '' else None
 
     @property
-    def method(self) -> bool:
+    def method(self) -> str:
         """
         HTTP Метод
         """
@@ -474,7 +484,7 @@ class Request:
         return self._exception is not None or isinstance(self._body, BaseException)
 
     @property
-    def exception(self) -> any:
+    def exception(self) -> BaseException | None:
         """
         Exception?
         """
@@ -533,7 +543,7 @@ class Request:
         Получаем разобранный урл запроса
         :return:
         """
-        return urlunparse(scheme=self.scheme, hostname=self.hostname, port=self.port, path=self.path)
+        return urlunparse((self.scheme, self.netloc, self.path, "", "", ""))
 
     @property
     def host_url(self) -> str:
@@ -541,16 +551,14 @@ class Request:
         Получаем хост запроса
         :return:
         """
-        return urlunparse(scheme=self.scheme, hostname=self.hostname, port=self.port)
+        return urlunparse((self.scheme, self.netloc, "", "", "", ""))
 
     @property
     def host(self) -> str:
         """
         Получаем хост запроса
         """
-        return urlunparse(
-            scheme=self.scheme, hostname=self.hostname, port=self.port
-        )
+        return self.host_url
 
     @property
     def query(self) -> dict:
@@ -568,7 +576,7 @@ class Request:
         """
         Получаем часть запроса query в формате ключ/[значения] или ключ/значение
         """
-        vals = urllib.parse.parse_qsl(self._query)
+        vals = urllib_parse.parse_qsl(self._query)
         params = {}
         if vals and isinstance(vals, list):
             for val in vals:
@@ -584,27 +592,28 @@ class Request:
         return params
 
     @property
-    def raw_query(self) -> list:
+    def raw_query(self) -> list[tuple[str, str]]:
         """
         Получаем часть запроса query в RAW формате
         """
-        return urllib.parse.parse_qsl(self._query)
+        return urllib_parse.parse_qsl(self._query)
 
     @property
-    def cookies(self) -> "ImmutableMultiDict[str, str]":
+    def cookies(self) -> dict[str, str]:
         """
         Печеньки запроса
         :return:
         """
-        if self.headers.get("Cookie"):
+        cookie_header = self.headers.get("Cookie")
+        if isinstance(cookie_header, str) and cookie_header:
             cookie = SimpleCookie()
-            cookie.load(self.headers.get("Cookie"))
+            cookie.load(cookie_header)
             return {k: v.value for k, v in cookie.items()}
         else:
             return {}
 
     @property
-    def content_length(self) -> [int, None]:
+    def content_length(self) -> int | None:
         """
         Размер запроса
         """
@@ -621,7 +630,7 @@ class Request:
         return None
 
     @property
-    def accept_language(self) -> []:
+    def accept_language(self) -> list[str] | None:
         """
         Язык запроса
         """
@@ -642,7 +651,7 @@ class Request:
         return None
 
     @property
-    def accept_encoding(self) -> [str, None]:
+    def accept_encoding(self) -> list[str] | None:
         """
         Кодировка запроса
         """
@@ -663,7 +672,7 @@ class Request:
         return None
 
     @property
-    def accept(self) -> [str, None]:
+    def accept(self) -> list[str] | None:
         """
         Accept: text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8
         """
@@ -684,7 +693,7 @@ class Request:
         return None
 
     @property
-    def content_type(self) -> [str, None]:
+    def content_type(self) -> str | None:
         """
         Content-Type: text/html; charset=UTF-8 => text/html
         Content-Type: multipart/form-data; boundary=something => multipart/form-data
@@ -700,7 +709,7 @@ class Request:
         return None
 
     @property
-    def boundary(self) -> [str, None]:
+    def boundary(self) -> str | None:
         """
 
         Content-Type: text/html; charset=UTF-8 => text/html
@@ -719,7 +728,7 @@ class Request:
         return None
 
     @property
-    def user_agent(self) -> [str, None]:
+    def user_agent(self) -> str | None:
         """
         Браузер пользователя
         """
@@ -733,7 +742,7 @@ class Request:
         return None
 
     @property
-    def content_charset(self) -> [str, None]:
+    def content_charset(self) -> str | None:
         """
         Content-Type: text/html; charset=UTF-8 => utf-8
         Content-Type: multipart/form-data; boundary=something => None
@@ -751,7 +760,7 @@ class Request:
         return None
 
     @property
-    def charset(self) -> [str, None]:
+    def charset(self) -> str:
         """
         Кодировка
         :return:
@@ -823,6 +832,8 @@ class Request:
         """
         if not self._is_form:
             return None
+        if not isinstance(self._body, dict):
+            return {}
         fields = {}
         for part in self._body:
             if isinstance(self._body[part], FieldStorage):
@@ -850,6 +861,8 @@ class Request:
         """
         if not self._is_form:
             return None
+        if not isinstance(self._body, dict):
+            return {}
         files = {}
         for part in self._body:
             if isinstance(self._body[part], FileStorage):
@@ -944,10 +957,13 @@ class RequestMaker:
             pass
         return charset
 
-    def make_body_from_form(self):
+    def _make_body_from_form_sync(self):
         """ Парсинг данных из формы (application/x-www-form-urlencoded) """
         fields = {}
-        data = urllib.parse.parse_qsl(self.body.decode(self.charset))
+        body = self.body
+        if not isinstance(body, bytes):
+            return fields
+        data = urllib_parse.parse_qsl(body.decode(self.charset))
         for _data in data:
             if fields.get(_data[0]) and isinstance(fields[_data[0]], list):
                 fields[_data[0]].append(_data[1])
@@ -961,7 +977,7 @@ class RequestMaker:
     async def make_body_from_buffer(self):
         if self.body is None:
             await self.fetch_body()
-        return self.body
+        return self.body or b""
 
     async def make_body_from_raw(self):
         input = await self.make_body_from_buffer()
@@ -991,7 +1007,7 @@ class RequestMaker:
     async def make_body_from_form(self):
         input = await self.make_body_from_buffer()
         fields = {}
-        data = urllib.parse.parse_qsl(input.decode(self.charset))
+        data = urllib_parse.parse_qsl(input.decode(self.charset))
         for _data in data:
             if fields.get(_data[0]) and isinstance(fields[_data[0]], list):
                 fields[_data[0]].append(FieldStorage(_data[0], _data[1]))

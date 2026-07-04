@@ -3,6 +3,7 @@ import logging
 import re
 import os
 from abc import ABC
+from typing import Any
 from urllib.parse import unquote
 from .response import Response
 from muscles.core import Schema
@@ -19,13 +20,13 @@ class RouteRule(ABC):
     """
     name = ''
 
-    def is_match(self, match, chunk):
-        pass
+    def is_match(self, val, chunk) -> bool:
+        return False
 
     def compile(self, val):
         return str(val)
 
-    def param(self, val):
+    def param(self, val) -> Any:
         return str(val)
 
 

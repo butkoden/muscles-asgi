@@ -1,5 +1,6 @@
 import json
 from jinja2 import Environment
+from jinja2.environment import Template as JinjaTemplate
 from jinja2.loaders import FileSystemLoader, PackageLoader, BaseLoader
 from jinja2.loaders import FunctionLoader, PrefixLoader
 from jinja2.exceptions import TemplateNotFound
@@ -98,7 +99,7 @@ class TemplateLoader(BaseLoader):
             name = '.'.join([prefix, item]) if prefix is not None else item
             self.mapping[name] = loader.mapping[item]
 
-    def get_path(self, template: str) -> t.Tuple[BaseLoader, str]:
+    def get_path(self, template: str) -> t.Tuple[t.Any, str, str]:
         try:
             prefix, name = template.split(self.delimiter, 1)
             searchpath = self.templates[prefix]
@@ -131,7 +132,7 @@ class TemplateLoader(BaseLoader):
             environment: "Environment",
             name: str,
             globals: t.Optional[t.MutableMapping[str, t.Any]] = None,
-    ) -> "Template":
+    ) -> JinjaTemplate:
         loader, local_name = self.get_loader(name)
         try:
             return loader.load(environment, local_name, globals)
@@ -419,7 +420,7 @@ class Template:
                 _templates = []
                 _blocks = []
                 for _block in blocks:
-                    key = _block[0] or str(block)
+                    key = _block[0] or str(_block)
                     if key not in self.blocks:
                         continue
                     config = _block[1] or {}

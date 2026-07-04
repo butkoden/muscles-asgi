@@ -4,10 +4,11 @@ import traceback
 import logging
 import inspect
 from collections import OrderedDict
+from typing import Any, cast
 
 from muscles.core import NotFoundException, ApplicationException, ErrorException
 from muscles.core import AttributeErrorException
-from muscles.core import inject, EventsStorageInterface
+from muscles.core import Dependency, inject, EventsStorageInterface
 from muscles.core import BackendPipeline
 from muscles.core import BaseResponse as CoreBaseResponse
 from muscles.core import normalize_problem_payload
@@ -27,7 +28,7 @@ class Transport:
     Транспорт протокола стратегии
     """
 
-    server = None
+    server: Any = None
 
     def __init__(self):
         pass
@@ -35,11 +36,14 @@ class Transport:
     def init_server(self, server):
         self.server = server
 
-    def make_response(self, response):
-        pass
+    async def execute(self, *args, **kwargs):
+        raise NotImplementedError
 
-    def make_request(self):
-        pass
+    async def make_response(self, response, *args, **kwargs):
+        raise NotImplementedError
+
+    async def make_request(self, *args, **kwargs):
+        raise NotImplementedError
 
 
 class AsgiTransport(Transport):
@@ -87,16 +91,18 @@ class AsgiTransport(Transport):
         return await self.server.handler(request)
 
     @inject(EventsStorageInterface)
-    async def make_response(self, response: BaseResponse, evnetStorage: EventsStorageInterface):
+    async def make_response(self, response: BaseResponse, evnetStorage: EventsStorageInterface | None = None):
         """
         Отправляем ответ
         :param response: объект ответа
         :param evnetStorage: EventsStorageInterface
         :return:
         """
+        if evnetStorage is None:
+            evnetStorage = Dependency.resolve(EventsStorageInterface)
         try:
             if self.scope['type'] == 'lifespan':
-                message = response.request.body
+                message = response.request.body if response.request is not None else None
 
                 if message is not None and message['type'] == 'lifespan.startup':
                     self.server.logger.debug("ASGI lifespan startup")
@@ -108,36 +114,36 @@ class AsgiTransport(Transport):
                     return
 
             elif self.scope['type'] == 'http':
-                before_response = evnetStorage.get('before_response')
+                before_response = getattr(evnetStorage, "get", lambda _key: None)('before_response')
                 if before_response:
                     for handler in before_response:
                         response = handler(response)
 
                 # Обработка HTTP-запроса
                 if self.scope['method'] == 'OPTIONS':
-                    response = MakeResponse(response=response)
-                    self.server.logger.debug("ASGI OPTIONS status=%s", response.status)
+                    protocol_response = MakeResponse(response=response)
+                    self.server.logger.debug("ASGI OPTIONS status=%s", protocol_response.status)
                     await self.send({
                         'type': 'http.response.start',
                         'status': 204,  # Нет контента
-                        'headers': self._asgi_headers(response.headers),
+                        'headers': self._asgi_headers(protocol_response.headers),
                     })
                     await self.send({
                         'type': 'http.response.body',
                         'body': b'',
                     })
                 else:
-                    response = MakeResponse(response=response)
-                    self.server.logger.debug("ASGI response status=%s", response.status)
+                    protocol_response = MakeResponse(response=response)
+                    self.server.logger.debug("ASGI response status=%s", protocol_response.status)
                     await self.send({
                         'type': 'http.response.start',
-                        'status': int(response.status),
-                        'headers': self._asgi_headers(response.headers),
+                        'status': int(protocol_response.status),
+                        'headers': self._asgi_headers(protocol_response.headers),
                     })
                     # Отправка тела ответа
                     await self.send({
                         'type': 'http.response.body',
-                        'body': response.body,
+                        'body': protocol_response.body,
                     })
 
             elif self.scope['type'] == 'websocket':
@@ -172,8 +178,8 @@ class AsgiServer:
     Объект сервера ASGI
     """
 
-    __transport_class = AsgiTransport
-    __transport = AsgiTransport
+    __transport_class: type[Transport] = AsgiTransport
+    __transport: Transport
     __host = 'localhost'
     __port = 80
 
@@ -220,7 +226,7 @@ class AsgiServer:
 
         return controller
 
-    def init_transport(self, transport):
+    def init_transport(self, transport: type[Transport]):
         """
         Инициализируем транспортный протокол
         :param transport: Транспорт
@@ -316,7 +322,8 @@ class AsgiServer:
             if len(response) >= 3:
                 kwargs["headers"] = response[2]
             return BaseResponse(status=status, request=request, **kwargs)
-        return BaseResponse(status=200, body=response, request=request)
+        body = str(response) if isinstance(response, BaseException) else response
+        return BaseResponse(status=200, body=body, request=request)
 
     async def handler(self, request):
         """
@@ -333,12 +340,14 @@ class AsgiServer:
             return await self.handle_request(request)
 
     @inject(EventsStorageInterface)
-    async def handle_request(self, request, evnetStorage: EventsStorageInterface):
+    async def handle_request(self, request, evnetStorage: EventsStorageInterface | None = None):
         """
         Обработчик запроса к серверу
         :param request: Объект запроса
         :return:
         """
+        if evnetStorage is None:
+            evnetStorage = Dependency.resolve(EventsStorageInterface)
         dictionary = {}
         try:
             pre_route_resp = self._pre_route_checks(request, evnetStorage)
@@ -419,7 +428,7 @@ class AsgiServer:
         """
         return await self.__transport.make_response(response)
 
-    def _pre_route_checks(self, request, evnetStorage: EventsStorageInterface):
+    def _pre_route_checks(self, request, evnetStorage: EventsStorageInterface | None):
         """
         Быстрые проверки до маршрутизации.
         :param request: Запрос
@@ -433,7 +442,7 @@ class AsgiServer:
         if cors_response is not None:
             return self._to_protocol_response(cors_response, request=request)
 
-        before_request = evnetStorage.get('before_request')
+        before_request = getattr(evnetStorage, "get", lambda _key: None)('before_request')
         if before_request:
             for handler in before_request:
                 resp = handler(request)
@@ -617,8 +626,9 @@ class AsgiServer:
             self.logger.debug("%s", "\n".join(trace) if isinstance(trace, list) else trace)
 
         response: Response | BaseResponse
-        if issubclass(self.__error_handler, Exception):
-            err_response = self.__error_handler().handler(
+        if isinstance(self.__error_handler, type) and issubclass(self.__error_handler, Exception):
+            error_handler = cast(Any, self.__error_handler)
+            err_response = error_handler().handler(
                 status=status,
                 reason=title,
                 body=payload,

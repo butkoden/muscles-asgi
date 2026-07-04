@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from typing import Any, cast
 
 from muscles import ApplicationMeta, Configurator, Context
 from .asgi import AsgiStrategy
@@ -33,7 +34,7 @@ class MuscularAsgiApp(metaclass=ApplicationMeta):
         }
     )
 
-    asgi = Context(AsgiStrategy, params={})
+    asgi = Context(cast(Any, AsgiStrategy), params={})
 
     def run(self, *args, **kwargs):
         return self.asgi.execute(*args, **kwargs, shutup=self.shutup)

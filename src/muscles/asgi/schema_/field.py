@@ -1,5 +1,6 @@
 import re
 import json as jsonLib
+from typing import Any
 from .schema import Schema
 from .exception import ValidationColumnException
 
@@ -24,13 +25,13 @@ class BaseField(Schema):
         })
         return results
 
-    def to_json(self) -> dict:
+    def to_json(self) -> Any:
         return self
 
-    def getstate(self, value) -> dict:
+    def getstate(self, value) -> Any:
         return value
 
-    def setstate(self, value) -> dict:
+    def setstate(self, value) -> Any:
         return value
 
     def validate_data_format(self, value, message):
@@ -314,10 +315,10 @@ class Json(BaseField):
         })
         return results
 
-    def getstate(self, value) -> dict:
+    def getstate(self, value) -> Any:
         return jsonLib.loads(value)
 
-    def setstate(self, value) -> dict:
+    def setstate(self, value) -> str:
         return jsonLib.dumps(value)
 
 

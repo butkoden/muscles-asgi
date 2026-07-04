@@ -12,8 +12,10 @@ from muscles.asgi.schema_ import (
     JsonRequestBody,
     JsonResponseBody,
     HeaderParameter,
+    Schema,
     Swagger,
 )
+from muscles.asgi.assets.asset import Asset
 from muscles import String
 
 
@@ -99,3 +101,24 @@ def test_schema_swagger_dump_with_request_response_and_security():
     assert dumped["response"]["200"]["application/json"]["description"] == "out"
     assert dumped["parameters"][0]["name"] == "X-Test"
     assert "apiKeyAuth" in dumped["components"]["securitySchemes"]
+
+
+def test_schema_remove_drops_child_schema():
+    parent = Schema()
+    child = Schema()
+    parent.add(child)
+
+    parent.remove(child)
+
+    assert parent.dump()["children"] == []
+
+
+def test_asset_compile_requires_tag():
+    asset = Asset()
+
+    try:
+        asset.compile()
+    except ValueError as exc:
+        assert "Tag not set" in str(exc)
+    else:
+        raise AssertionError("Asset.compile() should require a tag")
