@@ -37,6 +37,16 @@ class App(metaclass=ApplicationMeta):
 The ASGI package shares core schemas, route matching and OpenAPI generation with
 the other runtimes. It should not duplicate core itinerary code.
 
+## Schema Ownership
+
+ASGI does not ship its own `muscles.asgi.schema_` package. Framework schemas,
+columns, fields, request/response bodies, security objects and value objects
+belong to `muscles.core.schema` and should be imported from `muscles`:
+
+```python
+from muscles import Column, JsonRequestBody, Model, String
+```
+
 ## REST API And Swagger
 
 `RestApi` controllers/actions are projected into OpenAPI automatically. Generated
