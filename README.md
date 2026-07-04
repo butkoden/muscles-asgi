@@ -38,6 +38,26 @@ More detail: [docs/openapi-and-routing.md](docs/openapi-and-routing.md).
 Backend pipeline features are documented in
 [docs/backend-pipeline.md](docs/backend-pipeline.md).
 
+## Action Bridge
+
+`ActionAsgiAdapter` is an optional HTTP projection for Muscles actions. It keeps
+package-specific features out of ASGI routes: packages register normal core
+actions, and ASGI exposes only the actions explicitly allowed by the project.
+
+```python
+from muscles.asgi import ActionAsgiAdapter
+
+application = ActionAsgiAdapter.from_application(
+    app,
+    allowed_actions={"bookings.echo"},
+)
+```
+
+The bridge accepts JSON `POST /actions/<action-name>` requests, executes through
+core `ActionDispatcher(..., transport="http")`, returns JSON for non-stream
+results, and returns `application/problem+json` for core action errors. Stream
+actions should be projected through `muscles-sse`.
+
 ## Request Handling
 
 Request parsing does not require `cgi`, `multipart` or `python-magic` at import
