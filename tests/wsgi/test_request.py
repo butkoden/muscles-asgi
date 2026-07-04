@@ -128,6 +128,26 @@ def test_request_maker_normalizes_path_and_keeps_query_string():
     assert request.query == {"page": "1"}
 
 
+def test_request_url_helpers_are_runtime_safe():
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "scheme": "https",
+        "path": "/api/documents",
+        "raw_path": b"/api/documents",
+        "query_string": b"page=1",
+        "headers": [(b"host", b"example.test:8443")],
+        "server": ("example.test", 8443),
+        "client": ("127.0.0.1", 1234),
+    }
+
+    request = asyncio.run(RequestMaker(scope, _empty_receive).make())
+
+    assert request.base_url == "https://example.test:8443/api/documents"
+    assert request.host_url == "https://example.test:8443"
+    assert request.host == "https://example.test:8443"
+
+
 @muscular.api1.controller('/test_request',
                           description='Контроллер работы со списком пользователей и пользователями',
                           summary='РО'

@@ -1,5 +1,6 @@
 import os.path
 import re
+from typing import Any
 
 from muscles.core import EventsStorageInterface, inject
 from muscles.core import Itinerary
@@ -94,9 +95,15 @@ class RestApi(Itinerary):
         self.prefix = original_prefix
         self.install = True
 
-    def _trigger_set_handler(self, handler, *args, tags: list = None, description: str = None, summary: str = None,
-                             request: list = [], security: list = [], response: dict = {}, parameters: list = [],
+    def _trigger_set_handler(self, handler, *args, tags: list | None = None, description: str | None = None,
+                             summary: str | None = None,
+                             request: list | None = None, security: list | None = None,
+                             response: dict | None = None, parameters: list | None = None,
                              **kwargs):
+        request = request or []
+        security = security or []
+        response = response or {}
+        parameters = parameters or []
         auth = kwargs.get("auth")
         if auth is not None:
             security = [] if auth is False else (auth if isinstance(auth, list) else [auth])
@@ -126,8 +133,10 @@ class RestApi(Itinerary):
 
         return handler
 
-    def _trigger_set_controller(self, handler, *args, tags: list = None, description: str = None, summary: str = None,
-                                request: list = [], security: list = [], response: dict = {}, parameters: list = [],
+    def _trigger_set_controller(self, handler, *args, tags: list | None = None, description: str | None = None,
+                                summary: str | None = None,
+                                request: list | None = None, security: list | None = None,
+                                response: dict | None = None, parameters: list | None = None,
                                 stateful: bool = False,
                                 **kwargs):
         self.swagger.tags.append({
@@ -142,8 +151,9 @@ class RestApi(Itinerary):
             handler.stateful_controller = stateful
         return handler
 
-    def add(self, route, key=None, handler=None, method: str = '*', content_type: str = '*/*',
-            redirect: str = None, module=None):
+    def add(self, route, key=None, handler=None, method: str | None = '*', content_type: str | None = '*/*',
+            redirect: str | None = None, module=None,
+            canonical_route: str | None = None, aliases: list[str] | None = None):
         """
 
         :param route:
@@ -164,12 +174,15 @@ class RestApi(Itinerary):
         :return:
         """
         handler = super().add(route, key=key, handler=handler, method=method, content_type=content_type,
-                              redirect=redirect, module=module)
+                              redirect=redirect, module=module, canonical_route=canonical_route, aliases=aliases)
         self.swagger(handler=handler, node=handler.node, module=module)
+        return handler
 
-    def init(self, route, key=None, module=None, method: str = '*', content_type: str = '*/*', redirect: str = None,
-             tags: list = None, description: str = None, summary: str = None, request: list = [], security: list = [],
-             response: dict = {}, parameters: list = [], **kwargs):
+    def init(self, route, key=None, module=None, method: str | None = '*', content_type: str | None = '*/*',
+             redirect: str | None = None,
+             tags: list | None = None, description: str | None = None, summary: str | None = None,
+             request: list | None = None, security: list | None = None,
+             response: dict | None = None, parameters: list | None = None, **kwargs):
         """
         Декоратор функции обработки маршрута
 
@@ -193,8 +206,10 @@ class RestApi(Itinerary):
                                  request=request, security=security, response=response, parameters=parameters, **kwargs)
         return decorator
 
-    def controller(self, route, model: Schema = None, tags: list = None, description: str = None, summary: str = None,
-                   request: list = [], security: list = [], response: dict = {}, parameters: list = [],
+    def controller(self, route, model: Schema | None = None, tags: list | None = None,
+                   description: str | None = None, summary: str | None = None,
+                   request: list | None = None, security: list | None = None,
+                   response: dict | None = None, parameters: list | None = None,
                    stateful: bool = False, **kwargs):
         """
         Регистрация контроллера для обработки запросов классом
@@ -216,10 +231,12 @@ class RestApi(Itinerary):
                                        **kwargs)
         return decorator
 
-    def action(self, route=None, key=None, module=None, method: str = '*', content_type: str = '*/*',
-               redirect: str = None, model: Schema = None, tags: list = None, description: str = None,
-               summary: str = None, request: list = [], security: list = [], response: dict = {},
-               parameters: list = [], **kwargs):
+    def action(self, route=None, key=None, module=None, method: str | None = '*', content_type: str | None = '*/*',
+               redirect: str | None = None, model: Schema | None = None, tags: list | None = None,
+               description: str | None = None,
+               summary: str | None = None, request: list | None = None, security: list | None = None,
+               response: dict | None = None,
+               parameters: list | None = None, **kwargs):
         """
         Регистрация "действия" для контроллера.
         Внимание: Работает только совместно с регистрацией контроллера с помощью метода controller

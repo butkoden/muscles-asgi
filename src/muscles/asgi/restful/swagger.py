@@ -1,8 +1,9 @@
+from typing import Any, cast
+
 from muscles.core import Schema
 from muscles.core import Model
 from muscles.core import Collection
 from muscles.core import BaseSecurity
-from muscles.core.schema.itinerary import BaseSecurity
 import inspect
 
 
@@ -12,15 +13,17 @@ class Swagger(Schema):
     _instances = {}
     legal_http_method = ['get', 'post', 'put', 'delete', 'head', 'patch', 'options', 'trace', 'connect']
 
-    def __new__(cls, *args, name: str = None, **kwargs):
+    def __new__(cls, *args, name: str | None = None, **kwargs):
         if name not in cls._instances:
             cls._instances[name] = object.__new__(cls)
         return cls._instances[name]
 
-    def __init__(self, *args, name: str = None, schema_url: str = None, prefix: str = None, version: str = None,
-                 openapi_version: str = None,
-                 title: str = None, description: str = None, termsOfService: str = None, contact_email: str = None,
-                 servers: list = None, security: list[BaseSecurity] = None, **kwargs):
+    def __init__(self, *args, name: str | None = None, schema_url: str | None = None,
+                 prefix: str | None = None, version: str | None = None,
+                 openapi_version: str | None = None,
+                 title: str | None = None, description: str | None = None,
+                 termsOfService: str | None = None, contact_email: str | None = None,
+                 servers: list | None = None, security: list[BaseSecurity] | None = None, **kwargs):
         """
         Конструктор схемы Swagger
 
@@ -246,9 +249,10 @@ class Swagger(Schema):
                         self.models.append(handler.response[code].model)
         return responses
 
-    def __call__(self, *args, handler=None, node=None, model: Model = None, tags: list = None, description: str = None,
-                 summary: str = None, request: list = None, security: list = None, response: list = None,
-                 parameters: list = None, **kwargs):
+    def __call__(self, *args, handler=None, node=None, model: Model | None = None, tags: list | None = None,
+                 description: str | None = None, summary: str | None = None, request: list | None = None,
+                 security: list | None = None, response: list | None = None,
+                 parameters: list | None = None, **kwargs):
         """
         Устанавливает схему для метода. Позволяет указать базовые правила работы апи.
 
@@ -261,24 +265,26 @@ class Swagger(Schema):
         parameters = parameters or []
 
         if inspect.isclass(handler):
-            handler.actions = []
-            for name in list(handler.__dict__):
-                method = handler.__dict__[name]
+            handler_obj = cast(Any, handler)
+            handler_obj.actions = []
+            for name in list(handler_obj.__dict__):
+                method = handler_obj.__dict__[name]
                 if hasattr(method, "is_action"):
-                    handler.actions.append(name)
-                    if not hasattr(method, 'model') and hasattr(handler.__dict__[name], 'is_swagger') and \
-                            handler.__dict__[name].is_swagger:
-                        handler.__dict__[name].model = model
-                        if handler.__dict__[name].model is not None and handler.__dict__[name].model not in self.models:
-                            self.models.append(handler.__dict__[name].model)
+                    handler_obj.actions.append(name)
+                    if not hasattr(method, 'model') and hasattr(handler_obj.__dict__[name], 'is_swagger') and \
+                            handler_obj.__dict__[name].is_swagger:
+                        handler_obj.__dict__[name].model = model
+                        if handler_obj.__dict__[name].model is not None and handler_obj.__dict__[name].model not in self.models:
+                            self.models.append(handler_obj.__dict__[name].model)
         elif inspect.isfunction(handler):
-            handler.is_swagger = True
+            handler_obj = cast(Any, handler)
+            handler_obj.is_swagger = True
             if model:
-                handler.model = model
-                if handler.model is not None and handler.model not in self.models:
-                    self.models.append(handler.model)
+                handler_obj.model = model
+                if handler_obj.model is not None and handler_obj.model not in self.models:
+                    self.models.append(handler_obj.model)
         if model:
-            handler.model = model
+            cast(Any, handler).model = model
 
         if handler not in self.handlers:
             self.handlers.append(handler)

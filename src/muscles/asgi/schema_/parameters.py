@@ -1,9 +1,10 @@
 from .schema import Schema
+from typing import Any
 
 
 class BaseParameter(Schema):
 
-    def __init__(self, name, param_type, *args, required=False, description=None, explode=False, model=None, **kwargs):
+    def __init__(self, name, param_type: Any, *args, required=False, description=None, explode=False, model=None, **kwargs):
         kwargs["required"] = required
         kwargs["explode"] = explode
         kwargs["description"] = description

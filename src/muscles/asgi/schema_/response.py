@@ -1,10 +1,11 @@
 from .schema import Schema
 from .model import Model
+from typing import Any
 
 
 class ResponseBody(Schema):
 
-    def __init__(self, *args, content_type=None, description=None, http_code=None, model=None,
+    def __init__(self, *args, content_type=None, description=None, http_code=None, model: Any = None,
                  is_list=False, min_items=0, max_items=0, unique_items=False, base_schema=None, **kwargs):
         if callable(model):
             model = model()
@@ -21,7 +22,7 @@ class ResponseBody(Schema):
         self.content_type = content_type
         self.description = description
         self.http_code = http_code
-        self.model = model
+        self.model: Any = model
         self.is_list = is_list
         self.min_items = min_items
         self.max_items = max_items
@@ -30,7 +31,7 @@ class ResponseBody(Schema):
 
     def dump(self) -> dict:
         results = []
-        model = None
+        model: Any = None
         for child in self._children:
             results.append(child.dump())
         if self.model and isinstance(self.model, Model):

@@ -1,8 +1,12 @@
 from .schema import Schema
 from .exception import ValidationColumnException
+from typing import Any
 
 
 class BaseColumn(Schema):
+    column_name: str
+    field_type: Any
+    value: Any
 
     def __set_name__(self, owner, name):
         self.column_name = name

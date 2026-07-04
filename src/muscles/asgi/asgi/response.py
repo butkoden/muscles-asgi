@@ -14,8 +14,8 @@ from .error_handler import ErrorsException
 
 
 class ObjectJSONEncoder(JSONEncoder):
-    def default(self, obj):
-        return str(obj)
+    def default(self, o):
+        return str(o)
 
 
 class BaseResponse:
@@ -34,7 +34,7 @@ class BaseResponse:
                  body: Union[BaseModel, str, int, tuple, dict, list, bytes, bool, None] = None,
                  errors: Union[BaseModel, str, int, tuple, dict, list, bytes, bool, None] = None,
                  file: Union[str, None] = None,
-                 headers: list[tuple] = None,
+                 headers: list[tuple] | None = None,
                  reason: Union[str, None] = None,
                  trace: Union[str, list, None] = None,
                  request: Union[Request, None] = None,
@@ -108,7 +108,7 @@ class BaseResponse:
         return body
 
     @staticmethod
-    def schema(child=None):
+    def schema(status=200, child=None):
         if child is None:
             child = {
                 "oneOf": [
@@ -171,7 +171,12 @@ class BaseResponse:
             if encoding is not None:
                 headers.append(("Content-Encoding", encoding))
         elif self.body:
-            headers.append(('Content-Length', str(len(self.make_body()))))
+            encoded_body = self.make_body()
+            if isinstance(encoded_body, (bytes, str, list, tuple, dict)):
+                body_length = len(encoded_body)
+            else:
+                body_length = len(str(encoded_body))
+            headers.append(('Content-Length', str(body_length)))
             headers.append(('Content-Type', content_type))
 
         headers.append(('Server', str(' '.join([__name__, __version__]))))
@@ -233,7 +238,7 @@ class BaseResponse:
         return response_type
 
     @staticmethod
-    def file(headers: Optional[list] = None, file: str = None):
+    def file(headers: Optional[list] = None, file: str | None = None):
         """
         Формируем файл ответа
         :param status: HTTP Код статуса ответа 404=Not Found
@@ -272,7 +277,7 @@ class BaseResponse:
 
     @staticmethod
     def abort(http_status,
-              errors: list[dict] = None,
+              errors: list[dict] | None = None,
               reason: Union[str, BaseException, None] = None) -> BaseException:
         """
         Прерываем запрос с кодом и текстом
@@ -381,7 +386,7 @@ class Response(BaseResponse):
                 traceback.print_stack()
                 raise Exception(500, e)
         else:
-            body = codecs.encode(body, encoding='utf-8')
+            body = body if isinstance(body, bytes) else codecs.encode(str(body), encoding='utf-8')
         return body
 
     @staticmethod
@@ -498,7 +503,7 @@ class BadResponse(Response):
         return body
 
     @staticmethod
-    def schema(child=None):
+    def schema(status=200, child=None):
         if child is None:
             child = {
                 "oneOf": [

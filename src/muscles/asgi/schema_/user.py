@@ -1,4 +1,6 @@
-from ..schema import Column, UUID4, String, Numeric, Json, Model
+from .column import Column
+from .field import Json, Numeric, String, UUID4
+from .model import Model
 import uuid as uuid_gen
 
 

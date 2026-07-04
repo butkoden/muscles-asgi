@@ -1,4 +1,5 @@
 from .schema import Schema
+from typing import Any
 
 
 class BaseModel(Schema):
@@ -82,7 +83,7 @@ class ModelStorage:
 
     _instances = {}
 
-    def __call__(cls, *args, name: str = None, **kwargs):
+    def __call__(self, *args, name: str | None = None, **kwargs):
         """
         Данная реализация не учитывает возможное изменение передаваемых
         аргументов в `__init__`.
@@ -92,12 +93,10 @@ class ModelStorage:
         :param kwargs:
         :return:
         """
-        key = '-'.join([str(cls), str(name)])
-        if key not in cls._instances:
-            kwargs['name'] = name
-            instance = super().__call__(*args, **kwargs)
-            cls._instances[key] = instance
-        return cls._instances[key]
+        key = '-'.join([str(type(self)), str(name)])
+        if key not in self._instances:
+            self._instances[key] = self
+        return self._instances[key]
 
     def __init__(self, *args, **kwargs) -> None:
         """
@@ -157,7 +156,7 @@ class ModelStorage:
             raise Exception('ObjectStorage.add(%s, %s) -> Key already added' % (key, value))
         self._models[key] = value
 
-    def get(self, key) -> Model:
+    def get(self, key) -> Model | None:
         """
         Вернет класс объекта из хранилища.
         Рекомендуется к использованию вместо обращения os[key]

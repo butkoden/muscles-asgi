@@ -3,6 +3,7 @@ from watchdog.observers import Observer
 from watchdog.events import RegexMatchingEventHandler
 from watchdog.events import PatternMatchingEventHandler
 import importlib
+import importlib.util
 
 
 class PatternMatchingHandler(PatternMatchingEventHandler):
@@ -107,7 +108,10 @@ class Watchdog:
             print('-----------package, handler>', package, handler)
             if hasattr(package, handler):
                 handler = getattr(package, handler)
-                event_handler = handler(**config.get('config'))
+                handler_config = config.get('config') or {}
+                if not isinstance(handler_config, dict):
+                    handler_config = {}
+                event_handler = handler(**handler_config)
                 self.observer.schedule(event_handler, path=str(config.get('path')), recursive=True)
                 self.observer.start()
                 # self.observer.join()

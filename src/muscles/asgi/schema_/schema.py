@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Any, List
 
 
 class Schema(ABC):
@@ -10,7 +10,7 @@ class Schema(ABC):
     registry = []
 
     def __init__(self, *args, **kwargs):
-        self._parent = None
+        self._parent: Schema | None = None
         self._children: List[Schema] = []
         for arg in args:
             if isinstance(arg, Schema):
@@ -30,7 +30,7 @@ class Schema(ABC):
         cls.registry.append(cls)
 
     @property
-    def parent(self) -> Schema:
+    def parent(self) -> Schema | None:
         return self._parent
 
     @parent.setter
@@ -42,7 +42,7 @@ class Schema(ABC):
 
     def remove(self, schema: Schema) -> None:
         if schema in self._children:
-            del self._children[schema]
+            self._children.remove(schema)
 
     def is_composite(self) -> bool:
         return True
@@ -56,7 +56,7 @@ class Schema(ABC):
             "children": results
         }
 
-    def to_json(self) -> dict:
+    def to_json(self) -> Any:
         results = []
         for child in self._children:
             results.append(child.to_json())
