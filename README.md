@@ -64,9 +64,14 @@ the core `ApplicationRegistry`. This makes routes visible to
 `inspect_application(app)` and CLI/doctor tooling without making the registry
 the HTTP dispatch source.
 
+Call it after all controllers/actions are registered and before running
+inspection, doctor checks or generators. It is safe to call more than once:
+already projected routes are skipped. `finalize_api(app, api)` is an alias for
+projects that prefer a "declare, then finalize" bootstrap style.
+
 ```python
 from muscles import inspect_application
-from muscles.asgi import RestApi, mount_api
+from muscles.asgi import RestApi, finalize_api
 
 app = App()
 api = RestApi(name="Api", prefix="/api")
@@ -75,9 +80,13 @@ api = RestApi(name="Api", prefix="/api")
 def ping(request):
     return {"ok": True}
 
-mount_api(app, api)
+finalize_api(app, api)
 assert any(route["path"] == "/api/ping" for route in inspect_application(app)["routes"])
 ```
+
+Request dispatch still uses the ASGI `RestApi` route tree. The projected routes
+are lightweight descriptors for tools that need to understand the application
+without knowing ASGI internals.
 
 ## Action Bridge
 

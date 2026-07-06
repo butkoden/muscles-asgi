@@ -30,6 +30,41 @@ class BookingController:
         return request.json
 ```
 
+## Mounting For Inspection And Tools
+
+`RestApi` owns ASGI route declaration, dispatch and OpenAPI generation. Core
+tooling, however, reads routes from `ApplicationRegistry` through
+`inspect_application(app)`. Use `mount_api(app, api)` or its alias
+`finalize_api(app, api)` to copy lightweight route descriptors from `RestApi`
+into the registry:
+
+```python
+from muscles import inspect_application
+from muscles.asgi import RestApi, mount_api
+
+app = App()
+api = RestApi(prefix="/api/v1", version="1.0", name="ApiV1")
+
+
+@api.init("/health", method="GET", key="health.show")
+def health(request):
+    return {"ok": True}
+
+
+mount_api(app, api)
+
+routes = inspect_application(app)["routes"]
+assert any(route["path"] == "/api/v1/health" for route in routes)
+```
+
+Call `mount_api(...)` after all controllers/actions are registered and before
+inspection, doctor checks or generators run. The operation is idempotent: calling
+it more than once will not duplicate the same route signature.
+
+This projection does not move HTTP dispatch into `ApplicationRegistry`. ASGI
+requests still resolve through the `RestApi` route tree; the registry receives
+only descriptors that tools can read without knowing ASGI internals.
+
 ## Generated Paths
 
 OpenAPI paths use the route visible to clients:
