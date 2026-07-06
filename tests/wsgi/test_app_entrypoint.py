@@ -47,9 +47,17 @@ class RecordingTelemetry(TelemetryProvider):
 
     @contextmanager
     def span(self, name: str, **attributes):
-        span_attributes = dict(attributes)
-        yield span_attributes
-        self.spans.append((name, span_attributes))
+        span = RecordingSpan(attributes)
+        yield span
+        self.spans.append((name, span.attributes))
+
+
+class RecordingSpan:
+    def __init__(self, attributes):
+        self.attributes = dict(attributes)
+
+    def set_attribute(self, key, value):
+        self.attributes[key] = value
 
 
 def test_asgi_app_mounts_rest_api_and_records_server_dispatch_span():

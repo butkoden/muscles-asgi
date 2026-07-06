@@ -57,7 +57,6 @@ def asgi_app(app: MuscularAsgiApp, context: str | Context | None = None):
         raise TypeError("Application has no context 'asgi'")
 
     async def application(scope, receive, send):
-        mount_application_apis(app)
         ctx = _resolve_context()
         set_container = getattr(ctx, "set_container", None)
         if callable(set_container):

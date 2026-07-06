@@ -440,9 +440,18 @@ class AsgiServer:
         with span("muscles.server.dispatch", **self._server_dispatch_attributes(request)) as span_attributes:
             result = await callback()
             status_code = getattr(request, "_muscles_response_status", None)
-            if isinstance(span_attributes, dict) and status_code is not None:
-                span_attributes["http.status_code"] = status_code
+            self._set_span_attribute(span_attributes, "http.status_code", status_code)
             return result
+
+    def _set_span_attribute(self, span, key: str, value):
+        if value is None:
+            return
+        if isinstance(span, dict):
+            span[key] = value
+            return
+        set_attribute = getattr(span, "set_attribute", None)
+        if callable(set_attribute):
+            set_attribute(key, value)
 
     def _server_dispatch_attributes(self, request):
         route = request.route or {}
