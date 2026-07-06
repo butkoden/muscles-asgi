@@ -14,6 +14,8 @@ from .testing import TestClient, TestResponse
 __all__ = (
     "Asset",
     "RestApi",
+    "finalize_api",
+    "mount_api",
     "TemplateLoader",
     "Filters",
     "Template",
