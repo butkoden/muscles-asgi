@@ -26,6 +26,7 @@ class _ProjectedRouteHandler:
 
 
 def mount_api(app: Any, api: Any):
+    setattr(api, "_owner", app)
     registry = get_application_registry(app)
     existing_signatures = {_route_signature(handler) for handler in getattr(registry, "routes", []) or []}
 
@@ -42,6 +43,28 @@ def mount_api(app: Any, api: Any):
 
 def finalize_api(app: Any, api: Any):
     return mount_api(app, api)
+
+
+def mount_application_apis(app: Any):
+    seen: set[int] = set()
+    for api in _iter_application_apis(app):
+        marker = id(api)
+        if marker in seen:
+            continue
+        mount_api(app, api)
+        seen.add(marker)
+    return app
+
+
+def _iter_application_apis(app: Any):
+    for owner in (type(app), app):
+        for value in vars(owner).values():
+            if _looks_like_rest_api(value):
+                yield value
+
+
+def _looks_like_rest_api(value: Any) -> bool:
+    return hasattr(value, "nodes_map") and hasattr(value, "swagger")
 
 
 def _route_path(route_record: dict[str, Any]) -> str:

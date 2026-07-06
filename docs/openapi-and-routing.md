@@ -61,9 +61,40 @@ Call `mount_api(...)` after all controllers/actions are registered and before
 inspection, doctor checks or generators run. The operation is idempotent: calling
 it more than once will not duplicate the same route signature.
 
+`asgi_app(app)` calls `mount_application_apis(app)` once while creating the ASGI
+entrypoint. It scans `RestApi` objects stored on the application class or
+instance and projects them into the registry. Use explicit `mount_api(...)` when
+you build APIs outside the application object or need inspection before the ASGI
+entrypoint exists.
+
 This projection does not move HTTP dispatch into `ApplicationRegistry`. ASGI
 requests still resolve through the `RestApi` route tree; the registry receives
 only descriptors that tools can read without knowing ASGI internals.
+
+## Server Dispatch Telemetry
+
+When the application resolves a neutral `TelemetryProvider`, ASGI adds a
+`muscles.server.dispatch` span around matched route execution:
+
+```python
+from muscles import TelemetryProvider
+
+telemetry = app.container.resolve(TelemetryProvider)
+```
+
+The span includes safe framework and HTTP metadata:
+
+- `muscles.app`
+- `muscles.route.name`
+- `muscles.route.path`
+- `muscles.transport`
+- `http.method`
+- `http.route`
+- `http.status_code`
+
+ASGI does not import `muscles_otel`. It only uses the neutral `span(...)`
+surface from core, so applications can use `muscles-otel` or another compatible
+provider.
 
 ## Generated Paths
 

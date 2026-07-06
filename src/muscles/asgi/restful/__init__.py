@@ -1,4 +1,4 @@
-from .mount import finalize_api, mount_api
+from .mount import finalize_api, mount_api, mount_application_apis
 from .restful import RestApi
 # from .request_body import RequestBody, JsonRequestBody, XmlRequestBody, FormRequestBody, MultipartRequestBody, \
 #     FileRequestBody, PayloadRequestBody
@@ -10,6 +10,7 @@ __all__ = (
     "RestApi",
     "finalize_api",
     "mount_api",
+    "mount_application_apis",
     # "BaseParameter",
     # "HeaderParameter",
     # "CookieParameter",

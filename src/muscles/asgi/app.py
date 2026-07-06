@@ -3,8 +3,9 @@ from __future__ import annotations
 import inspect
 from typing import Any, cast
 
-from muscles import ApplicationMeta, Configurator, Context
+from muscles import ApplicationMeta, Configurator, Context, resolve_telemetry
 from .asgi import AsgiStrategy
+from .restful import mount_application_apis
 
 
 class MuscularAsgiApp(metaclass=ApplicationMeta):
@@ -41,6 +42,8 @@ class MuscularAsgiApp(metaclass=ApplicationMeta):
 
 
 def asgi_app(app: MuscularAsgiApp, context: str | Context | None = None):
+    mount_application_apis(app)
+
     def _resolve_context():
         if isinstance(context, Context):
             return context
@@ -55,7 +58,14 @@ def asgi_app(app: MuscularAsgiApp, context: str | Context | None = None):
 
     async def application(scope, receive, send):
         ctx = _resolve_context()
-        result = ctx.execute(scope=scope, receive=receive, send=send)
+        set_container = getattr(ctx, "set_container", None)
+        if callable(set_container):
+            set_container(app)
+        execute_kwargs = {"scope": scope, "receive": receive, "send": send}
+        telemetry = resolve_telemetry(app)
+        if hasattr(telemetry, "span"):
+            execute_kwargs["otel_tracer"] = telemetry
+        result = ctx.execute(**execute_kwargs)
         if inspect.isawaitable(result):
             await result
 

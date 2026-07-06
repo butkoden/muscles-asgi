@@ -68,6 +68,9 @@ Call it after all controllers/actions are registered and before running
 inspection, doctor checks or generators. It is safe to call more than once:
 already projected routes are skipped. `finalize_api(app, api)` is an alias for
 projects that prefer a "declare, then finalize" bootstrap style.
+`asgi_app(app)` also calls `mount_application_apis(app)` once when the ASGI
+entrypoint is created, so APIs stored as attributes on the application are
+visible to runtime inspection without additional app-side adapters.
 
 ```python
 from muscles import inspect_application
@@ -87,6 +90,10 @@ assert any(route["path"] == "/api/ping" for route in inspect_application(app)["r
 Request dispatch still uses the ASGI `RestApi` route tree. The projected routes
 are lightweight descriptors for tools that need to understand the application
 without knowing ASGI internals.
+
+When the application has a neutral `TelemetryProvider`, ASGI records a
+`muscles.server.dispatch` span for matched routes with app, route, method and
+HTTP status attributes.
 
 ## Action Bridge
 
