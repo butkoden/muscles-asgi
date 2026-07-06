@@ -57,6 +57,28 @@ More detail: [docs/openapi-and-routing.md](docs/openapi-and-routing.md).
 Backend pipeline features are documented in
 [docs/backend-pipeline.md](docs/backend-pipeline.md).
 
+## Application Inspection
+
+Use `mount_api(app, api)` after declaring a `RestApi` to project ASGI routes into
+the core `ApplicationRegistry`. This makes routes visible to
+`inspect_application(app)` and CLI/doctor tooling without making the registry
+the HTTP dispatch source.
+
+```python
+from muscles import inspect_application
+from muscles.asgi import RestApi, mount_api
+
+app = App()
+api = RestApi(name="Api", prefix="/api")
+
+@api.init("/ping", method="get")
+def ping(request):
+    return {"ok": True}
+
+mount_api(app, api)
+assert any(route["path"] == "/api/ping" for route in inspect_application(app)["routes"])
+```
+
 ## Action Bridge
 
 `ActionAsgiAdapter` is an optional HTTP projection for Muscles actions. It keeps
