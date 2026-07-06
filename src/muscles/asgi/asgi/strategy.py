@@ -3,7 +3,7 @@ import io
 import logging
 from typing import Optional
 
-from muscles.core import BaseStrategy
+from muscles.core import BaseStrategy, resolve_telemetry
 from watchdog.events import LoggingEventHandler
 from .server import AsgiTransport, AsgiServer
 from .error_handler import ResponseErrorHandler
@@ -31,6 +31,8 @@ class AsgiStrategy(BaseStrategy):
         port = kwargs.get('port', 8080)
         logger = kwargs.get('logger')
         container = kwargs.get('container')
+        if kwargs.get("otel_tracer") is None:
+            kwargs["otel_tracer"] = resolve_telemetry(container)
         if logger is None and container is not None:
             logger = getattr(container, "logger", None)
         if isinstance(logger, str):

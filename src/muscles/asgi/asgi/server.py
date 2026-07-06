@@ -11,7 +11,7 @@ from muscles.core import AttributeErrorException
 from muscles.core import Dependency, inject, EventsStorageInterface
 from muscles.core import BackendPipeline
 from muscles.core import BaseResponse as CoreBaseResponse
-from muscles.core import normalize_problem_payload
+from muscles.core import normalize_path, normalize_problem_payload
 from .request import RequestMaker
 from .response import MakeResponse, BaseResponse, BadResponse, Response
 from .routers import routes, itinerary
@@ -72,9 +72,9 @@ class AsgiTransport(Transport):
         self.scope = kwargs['scope']
         self.receive = kwargs['receive']
         self.send = kwargs['send']
-        return await self.handler(self.scope, self.receive, self.send)
+        return await self.handler(self.scope, self.receive, self.send, otel_tracer=kwargs.get("otel_tracer"))
 
-    async def handler(self, scope, receive, send):
+    async def handler(self, scope, receive, send, otel_tracer=None):
         """
         Обработчик транспорта
 
@@ -88,6 +88,7 @@ class AsgiTransport(Transport):
 
         if request is None:
             raise ApplicationException(status=400, reason='Bad request', body='Malformed request line')
+        setattr(request, "otel_tracer", otel_tracer)
         return await self.server.handler(request)
 
     @inject(EventsStorageInterface)
@@ -121,6 +122,7 @@ class AsgiTransport(Transport):
 
                 # Обработка HTTP-запроса
                 if self.scope['method'] == 'OPTIONS':
+                    self._remember_response_status(response, status=204)
                     protocol_response = MakeResponse(response=response)
                     self.server.logger.debug("ASGI OPTIONS status=%s", protocol_response.status)
                     await self.send({
@@ -133,6 +135,7 @@ class AsgiTransport(Transport):
                         'body': b'',
                     })
                 else:
+                    self._remember_response_status(response)
                     protocol_response = MakeResponse(response=response)
                     self.server.logger.debug("ASGI response status=%s", protocol_response.status)
                     await self.send({
@@ -171,6 +174,16 @@ class AsgiTransport(Transport):
         except Exception as ae:
             self.server.logger.exception("ASGI request build error")
             raise ApplicationException(status=500, reason=ae, body=traceback.format_tb(ae.__traceback__))
+
+    def _remember_response_status(self, response, status=None):
+        request = getattr(response, "request", None)
+        raw_status = status if status is not None else getattr(response, "status", None)
+        if request is not None and raw_status is not None:
+            try:
+                setattr(request, "_muscles_response_status", int(raw_status))
+            except (TypeError, ValueError):
+                pass
+        return response
 
 
 class AsgiServer:
@@ -374,44 +387,85 @@ class AsgiServer:
             return await self.send_error(ae, request)
 
         if request.route:
-            if request.route['redirect'] and request.route['redirect'] is not None:
-                return await self._make_response(BaseResponse.redirect(request.route['redirect']))
-            else:
-                try:
-                    guard_response = await self._run_guards(request)
-                    if guard_response is not None:
-                        return await self._make_response(self._convert_response(guard_response, request=request))
-                    await self._run_security(request)
-                    handler_response = await self._call_route_handler(request, dictionary)
-                    response = self._convert_response(handler_response, request=request)
-                    return await self._make_response(response)
-                except ApplicationException as ae:
-                    self.logger.exception("ASGI application exception")
-                    ae = ApplicationException(status=ae.status, reason=ae.reason, body=ae.body, traceback=traceback.format_tb(ae.__traceback__))
-                    return await self.send_error(ae, request)
-                except ErrorException as ae:
-                    self.logger.exception("ASGI error exception")
-                    ae = ApplicationException(status=500, reason=ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
-                    return await self.send_error(ae, request)
-                except ImportError as ae:
-                    self.logger.exception("ASGI import exception")
-                    ae = ApplicationException(status=500, reason=ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
-                    return await self.send_error(ae, request)
-                except KeyError as ae:
-                    self.logger.exception("ASGI handler key error")
-                    if self._has_exception_mapping(ae, request):
-                        return await self.send_error(ae, request)
-                    ae = AttributeErrorException(status=500, reason="KeyError[%s]" % ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
-                    return await self.send_error(ae, request)
-                except Exception as ae:
-                    self.logger.exception("ASGI handler unexpected exception")
-                    if self._has_exception_mapping(ae, request):
-                        return await self.send_error(ae, request)
-                    ae = ApplicationException(status=500, reason=ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
-                    return await self.send_error(ae, request)
+            return await self._trace_server_dispatch(
+                request,
+                lambda: self._dispatch_route(request, dictionary),
+            )
         if self._has_matching_path(request.path):
             return await self._make_response(BaseResponse(status=404, body={}, request=request))
         return await self.send_error(NotFoundException(status=404, reason="Not Found"), request)
+
+    async def _dispatch_route(self, request, dictionary):
+        if request.route['redirect'] and request.route['redirect'] is not None:
+            return await self._make_response(BaseResponse.redirect(request.route['redirect']))
+        try:
+            guard_response = await self._run_guards(request)
+            if guard_response is not None:
+                return await self._make_response(self._convert_response(guard_response, request=request))
+            await self._run_security(request)
+            handler_response = await self._call_route_handler(request, dictionary)
+            response = self._convert_response(handler_response, request=request)
+            return await self._make_response(response)
+        except ApplicationException as ae:
+            self.logger.exception("ASGI application exception")
+            ae = ApplicationException(status=ae.status, reason=ae.reason, body=ae.body, traceback=traceback.format_tb(ae.__traceback__))
+            return await self.send_error(ae, request)
+        except ErrorException as ae:
+            self.logger.exception("ASGI error exception")
+            ae = ApplicationException(status=500, reason=ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
+            return await self.send_error(ae, request)
+        except ImportError as ae:
+            self.logger.exception("ASGI import exception")
+            ae = ApplicationException(status=500, reason=ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
+            return await self.send_error(ae, request)
+        except KeyError as ae:
+            self.logger.exception("ASGI handler key error")
+            if self._has_exception_mapping(ae, request):
+                return await self.send_error(ae, request)
+            ae = AttributeErrorException(status=500, reason="KeyError[%s]" % ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
+            return await self.send_error(ae, request)
+        except Exception as ae:
+            self.logger.exception("ASGI handler unexpected exception")
+            if self._has_exception_mapping(ae, request):
+                return await self.send_error(ae, request)
+            ae = ApplicationException(status=500, reason=ae, body=None, traceback=traceback.format_tb(ae.__traceback__))
+            return await self.send_error(ae, request)
+
+    async def _trace_server_dispatch(self, request, callback):
+        tracer = getattr(request, "otel_tracer", None)
+        span = getattr(tracer, "span", None)
+        if not callable(span):
+            return await callback()
+
+        with span("muscles.server.dispatch", **self._server_dispatch_attributes(request)) as span_attributes:
+            result = await callback()
+            status_code = getattr(request, "_muscles_response_status", None)
+            if isinstance(span_attributes, dict) and status_code is not None:
+                span_attributes["http.status_code"] = status_code
+            return result
+
+    def _server_dispatch_attributes(self, request):
+        route = request.route or {}
+        route_path = normalize_path(route.get("canonical_route") or route.get("route") or request.path)
+        return {
+            "muscles.app": self._request_app_name(request),
+            "muscles.route.name": route.get("key"),
+            "muscles.route.path": route_path,
+            "muscles.transport": "asgi",
+            "http.method": request.method,
+            "http.route": route_path,
+        }
+
+    def _request_app_name(self, request):
+        tracer_owner = getattr(request, "itinerary", None)
+        app = getattr(tracer_owner, "_owner", None) or getattr(request, "app", None)
+        if app is None:
+            app = getattr(request, "container", None)
+        if app is None:
+            return None
+        if isinstance(app, str):
+            return app
+        return app.__class__.__name__
 
     def _has_matching_path(self, path: str) -> bool:
         for instance in self._runtime_instances():

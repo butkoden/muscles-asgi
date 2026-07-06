@@ -16,6 +16,7 @@ __all__ = (
     "RestApi",
     "finalize_api",
     "mount_api",
+    "mount_application_apis",
     "TemplateLoader",
     "Filters",
     "Template",
