@@ -8,12 +8,13 @@ name = "muscles-asgi"
 version = "1.0.0"
 description = "Muscles ASGI runtime adapter for Web/API applications"
 authors = ["Denis B. <denis@butko.info>"]
+license = "MIT"
 packages = [{include = "muscles", from = "src"}]
 
 
 [tool.poetry.dependencies]
 python = "^3.9"
-muscles = {git = "https://github.com/butkoden/muscles.git", branch = "master"}
+muscles = ">=1.0.0rc1,<2.0.0"
 watchdog = "^4.0.0"
 uwsgi = "==2.0.20"
 jinja2 = "==3.1.2"
@@ -22,9 +23,8 @@ python-magic = "==0.4.27"
 requests = "^2.31.0"
 requests-toolbelt = "^1.0.0"
 dnspython = "==2.6.1"
-pytest = "==7.1.3"
-setuptools = "==69.0.2"
 
 
 [tool.poetry.dev-dependencies]
-# Зависимости для разработки
+pytest = "==7.1.3"
+setuptools = "==69.0.2"

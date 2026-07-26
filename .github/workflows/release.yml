@@ -13,13 +13,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: butkoden/muscles
+          ref: feature/task-57-core-rc-readiness
           path: muscles
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e .[dev]
-      - run: PYTHONPATH=muscles/src:src python -m pytest -q
+      - run: python -m pip install -e ./muscles --no-deps
+      - run: python -m pip install watchdog jinja2 jsonschema python-magic requests requests-toolbelt dnspython pyyaml pytest
+      - run: python -m pip install -e . --no-deps
+      - run: PYTHONPATH=muscles/src:src python -m pytest --import-mode=importlib -q
 
   build:
     needs: test
@@ -38,6 +41,7 @@ jobs:
 
   publish:
     needs: build
+    if: github.event_name == 'release' && github.event.action == 'published'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -49,4 +53,3 @@ jobs:
           name: dist
           path: dist
       - uses: pypa/gh-action-pypi-publish@release/v1
-
