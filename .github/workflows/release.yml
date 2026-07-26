@@ -38,6 +38,7 @@ jobs:
 
   publish:
     needs: build
+    if: github.event_name == 'release' && github.event.action == 'published'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -49,4 +50,3 @@ jobs:
           name: dist
           path: dist
       - uses: pypa/gh-action-pypi-publish@release/v1
-
