@@ -18,6 +18,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ./muscles --no-deps
       - run: python -m pip install -e .[dev]
       - run: PYTHONPATH=muscles/src:src python -m pytest -q
 
