@@ -19,6 +19,7 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip build
       - run: python -m pip install -e ./muscles --no-deps
-      - run: python -m pip install -e . pytest
+      - run: python -m pip install watchdog jinja2 jsonschema python-magic requests requests-toolbelt dnspython pytest
+      - run: python -m pip install -e . --no-deps
       - run: PYTHONPATH=src python -m pytest -q
       - run: python -m build --wheel --sdist
