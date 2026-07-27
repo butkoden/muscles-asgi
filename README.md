@@ -5,6 +5,10 @@ while using ASGI scopes/events for async-capable servers.
 
 ## Installation
 
+```bash
+pip install muscles-asgi
+```
+
 Canonical ecosystem install matrix is documented in core:
 [Muscles installation matrix](https://github.com/butkoden/muscles/blob/master/docs/installation.md).
 
