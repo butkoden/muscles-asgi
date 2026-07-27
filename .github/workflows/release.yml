@@ -10,19 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: butkoden/muscles
-          ref: feature/task-57-core-rc-readiness
-          path: muscles
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ./muscles --no-deps
+      - run: python -m pip install --pre "muscles>=1.0.0rc1,<2.0.0"
       - run: python -m pip install watchdog jinja2 jsonschema python-magic requests requests-toolbelt dnspython pyyaml pytest
       - run: python -m pip install -e . --no-deps
-      - run: PYTHONPATH=muscles/src:src python -m pytest --import-mode=importlib -q
+      - run: PYTHONPATH=src python -m pytest --import-mode=importlib -q
 
   build:
     needs: test

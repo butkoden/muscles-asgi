@@ -178,14 +178,25 @@ class ActionAsgiAdapter:
         if isinstance(exc, ActionPermissionDenied):
             return 403, ActionAsgiAdapter._problem_payload(exc, 403, "Action permission denied")
         if isinstance(exc, ActionExecutionError):
-            return 500, ActionAsgiAdapter._problem_payload(exc, 500, "Action execution failed")
+            return 500, {
+                "type": "about:blank",
+                "title": "Internal Server Error",
+                "status": 500,
+                "detail": "Action execution failed.",
+                "code": "action_execution_error",
+                "action": exc.action_name,
+                "data": None,
+            }
         if isinstance(exc, ActionError):
             return exc.status, ActionAsgiAdapter._problem_payload(exc, exc.status, "Action error")
         return 500, {
             "type": "about:blank",
             "title": "Internal Server Error",
             "status": 500,
-            "detail": str(exc),
+            # Unexpected exception details belong in server logs, not in the
+            # public problem response where they can disclose credentials or
+            # infrastructure internals.
+            "detail": "Internal server error.",
             "code": "internal_error",
             "action": None,
             "data": None,

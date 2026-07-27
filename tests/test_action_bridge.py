@@ -83,6 +83,27 @@ def test_action_bridge_maps_permission_error_to_problem_json():
     assert payload["action"] == "bookings.secret"
 
 
+def test_action_bridge_does_not_expose_unhandled_exception_details():
+    app = _make_app()
+
+    @app.action(
+        name="bookings.broken",
+        input_schema={"type": "object", "properties": {}},
+        transports=["http"],
+    )
+    def broken(_payload, _context):
+        raise RuntimeError("database password leaked")
+
+    adapter = ActionAsgiAdapter.from_application(app, allowed_actions={"bookings.broken"})
+    response = TestClient(adapter).post("/actions/bookings.broken", json={})
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["code"] == "action_execution_error"
+    assert payload["detail"] == "Action execution failed."
+    assert "database password" not in response.text
+
+
 def test_action_bridge_maps_unknown_allowed_action_to_not_found():
     adapter = ActionAsgiAdapter.from_application(_make_app(), allowed_actions={"bookings.missing"})
     response = TestClient(adapter).post("/actions/bookings.missing", json={})
