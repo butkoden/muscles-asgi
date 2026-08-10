@@ -5,7 +5,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "muscles-asgi"
-version = "1.0.1"
+version = "1.0.2"
 description = "Muscles ASGI runtime adapter for Web/API applications"
 readme = "README.md"
 authors = ["Denis B. <denis@butko.info>"]
@@ -28,11 +28,10 @@ Releases = "https://github.com/butkoden/muscles-asgi/releases"
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
-muscles = ">=1.0.0rc1,<2.0.0"
+muscles = ">=1.0.0rc5,<2.0.0"
 watchdog = "^4.0.0"
 uwsgi = {version = "==2.0.20", optional = true}
 jinja2 = "==3.1.2"
-jsonschema = "==4.16.0"
 python-magic = {version = "==0.4.27", optional = true}
 requests = "^2.31.0"
 requests-toolbelt = "^1.0.0"
@@ -41,6 +40,7 @@ dnspython = "==2.6.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "==7.1.3"
+openapi-spec-validator = ">=0.7,<0.8"
 setuptools = "==69.0.2"
 
 [tool.poetry.extras]
