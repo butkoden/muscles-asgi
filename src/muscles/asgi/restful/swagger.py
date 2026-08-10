@@ -199,12 +199,12 @@ class Swagger(Schema):
             else:
                 tags = []
 
-            _handlers[full_route][method] = {
-                'tags': tags,
-                'description': handler.description,
-                'summary': handler.summary,
-            }
-            operation = _handlers[full_route][method]
+            operation = {'tags': tags}
+            if handler.description is not None:
+                operation['description'] = handler.description
+            if handler.summary is not None:
+                operation['summary'] = handler.summary
+            _handlers[full_route][method] = operation
             parameters = self._dump_paths_parameters(handler)
             known = {item.get('name') for item in parameters}
             for name in re.findall(r'{([^}/]+)}', full_route):

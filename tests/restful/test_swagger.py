@@ -386,6 +386,23 @@ def test_generated_openapi_schema_validates(openapi_version):
         validate(invalid)
 
 
+@pytest.mark.parametrize('openapi_version', ['3.0.3', '3.1.0'])
+def test_handler_without_optional_metadata_generates_valid_operation(openapi_version):
+    api = RestApi(name='MetadataOptionalAsgi', prefix='/metadata')
+
+    @api.init('/health', method='GET')
+    def health(request):
+        return {'ok': True}
+
+    api.swagger.openapi_version = openapi_version
+    schema = json.loads(json.dumps(api.swagger.dump()))
+    operation = schema['paths']['/metadata/health']['get']
+
+    validate(schema)
+    assert 'description' not in operation
+    assert 'summary' not in operation
+
+
 def test_check_default_docs_and_openapi_endpoints():
     environ.update({
         'REQUEST_METHOD': 'GET',

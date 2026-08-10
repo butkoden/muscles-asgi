@@ -28,7 +28,7 @@ Releases = "https://github.com/butkoden/muscles-asgi/releases"
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
-muscles = ">=1.0.0rc1,<2.0.0"
+muscles = ">=1.0.0rc5,<2.0.0"
 watchdog = "^4.0.0"
 uwsgi = {version = "==2.0.20", optional = true}
 jinja2 = "==3.1.2"
