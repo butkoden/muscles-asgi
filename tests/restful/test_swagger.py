@@ -1,5 +1,8 @@
 import io
 import json
+import pytest
+from openapi_spec_validator import validate
+from openapi_spec_validator.validation.exceptions import OpenAPIValidationError
 from muscles import JsonResponseBody
 from muscles import XmlResponseBody
 from muscles import MultipartRequestBody
@@ -330,9 +333,9 @@ def test_check_schema():
         assert pr['info']['title'] == 'Api v1'
         assert pr['info']['version'] == '1.0'
         assert pr['openapi'] == '3.0.3'
-        assert pr['contact']['email'] == '**@**.info'
-        assert pr['description'] == 'Системный Api'
-        assert pr['termsOfService'] == 'http://swagger.io/terms/'
+        assert pr['info']['contact']['email'] == '**@**.info'
+        assert pr['info']['description'] == 'Системный Api'
+        assert pr['info']['termsOfService'] == 'http://swagger.io/terms/'
         assert pr['servers'] == [{'url': '/api/v1'}]
         assert pr['paths']['/api/v1/test'].get('get')
         assert pr['paths']['/api/v1/test'].get('post')
@@ -369,6 +372,20 @@ def test_check_schema_with_custom_openapi_version():
         assert schema['openapi'] == '3.1.0'
 
 
+@pytest.mark.parametrize('openapi_version', ['3.0.3', '3.1.0'])
+def test_generated_openapi_schema_validates(openapi_version):
+    muscular = Muscular()
+    muscular.api1.swagger.openapi_version = openapi_version
+    schema = json.loads(json.dumps(muscular.api1.swagger.dump()))
+
+    validate(schema)
+
+    invalid = json.loads(json.dumps(schema))
+    invalid['info'].pop('title')
+    with pytest.raises(OpenAPIValidationError):
+        validate(invalid)
+
+
 def test_check_default_docs_and_openapi_endpoints():
     environ.update({
         'REQUEST_METHOD': 'GET',
@@ -377,6 +394,7 @@ def test_check_default_docs_and_openapi_endpoints():
         'CONTENT_TYPE': 'text/html',
     })
     muscular = Muscular()
+    muscular.api1.swagger.openapi_version = '3.0.3'
     muscular.context.strategy = AsgiStrategy
     app = muscular(environ, start_response)
     html = b''.join(app).decode("utf-8")

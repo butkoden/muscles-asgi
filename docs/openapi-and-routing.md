@@ -71,6 +71,14 @@ This projection does not move HTTP dispatch into `ApplicationRegistry`. ASGI
 requests still resolve through the `RestApi` route tree; the registry receives
 only descriptors that tools can read without knowing ASGI internals.
 
+## OpenAPI Validation
+
+Generated documents target OpenAPI 3.0.x by default and also support 3.1.x.
+Responses, request bodies, path parameters and model schemas are emitted as
+standard OpenAPI objects. The package's development dependencies include
+`openapi-spec-validator>=0.7,<0.8`; validate a generated document after
+JSON serialization to exercise the same shape served by `/openapi.json`.
+
 ## Server Dispatch Telemetry
 
 When the application resolves a neutral `TelemetryProvider`, ASGI adds a

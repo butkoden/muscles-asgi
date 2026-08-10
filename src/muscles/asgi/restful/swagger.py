@@ -4,7 +4,9 @@ from muscles.core import Schema
 from muscles.core import Model
 from muscles.core import Collection
 from muscles.core import BaseSecurity
+from muscles.core import to_openapi_schema
 import inspect
+import re
 
 
 class Swagger(Schema):
@@ -94,15 +96,25 @@ class Swagger(Schema):
             'components': {}
         }
         self.schema.update(super().dump())
+        self.schema.pop('class', None)
+        self.schema.pop('children', None)
 
         self.schema['info']['title'] = self.title
         self.schema['info']['version'] = self.version
-        self.schema['description'] = self.description
-        self.schema['termsOfService'] = self.termsOfService
+        if self.description is not None:
+            self.schema['info']['description'] = self.description
+        if self.termsOfService is not None:
+            self.schema['info']['termsOfService'] = self.termsOfService
         self.schema['servers'] = self.servers
-        self.schema['contact']['email'] = self.contact_email
+        if self.contact_email is not None:
+            self.schema['info']['contact'] = {'email': self.contact_email}
+        self.schema.pop('contact', None)
         self.schema['paths'] = self._dump_paths()
-        self.schema['components']['schemas'] = self._dump_models()
+        models = self._dump_models()
+        self.schema['components']['schemas'] = {
+            name: to_openapi_schema(model_schema)
+            for name, model_schema in models.items()
+        }
         self.schema['components']['securitySchemes'] = self._dump_securitySchemes()
 
         # self.schema['components']['securitySchemes'] = {
@@ -177,6 +189,8 @@ class Swagger(Schema):
             elif method is None:
                 method = 'get'
             method = method.lower()
+            if method == 'option':
+                method = 'options'
 
             if hasattr(handler, 'tags') and len(handler.tags) > 0:
                 tags = handler.tags
@@ -190,14 +204,20 @@ class Swagger(Schema):
                 'description': handler.description,
                 'summary': handler.summary,
             }
-            if len(handler.parameters) > 0:
-                _handlers[full_route][method].update({
-                    'parameters': self._dump_paths_parameters(handler)
-                })
-            if hasattr(handler, 'response') and len(handler.response) > 0:
-                _handlers[full_route][method].update({
-                    'responses': self._dump_paths_response(handler)
-                })
+            operation = _handlers[full_route][method]
+            parameters = self._dump_paths_parameters(handler)
+            known = {item.get('name') for item in parameters}
+            for name in re.findall(r'{([^}/]+)}', full_route):
+                if name not in known:
+                    parameters.append({
+                        'name': name,
+                        'in': 'path',
+                        'required': True,
+                        'schema': {'type': 'string'},
+                    })
+            if parameters:
+                operation['parameters'] = parameters
+            operation['responses'] = self._dump_paths_response(handler)
             if hasattr(handler, 'request') and len(handler.request) > 0:
                 _handlers[full_route][method].update({
                     'requestBody': self._dump_paths_request(handler)
@@ -219,7 +239,12 @@ class Swagger(Schema):
         parameters = []
         if len(handler.parameters) > 0:
             for parameter in handler.parameters:
-                parameters.append(parameter.dump())
+                item = parameter.dump()
+                item['schema'] = to_openapi_schema(item.get('schema', {}))
+                item = {key: value for key, value in item.items() if value is not None}
+                if item.get('in') == 'path':
+                    item['required'] = True
+                parameters.append(item)
         return parameters
 
     def _dump_paths_request(self, handler):
@@ -229,24 +254,53 @@ class Swagger(Schema):
                 requests.update(request.dump())
                 if request.model and request.model not in self.models:
                     self.models.append(request.model)
-        return {
-            "content": requests
-        }
+        description = next(
+            (item.get('description') for item in requests.values() if item.get('description')),
+            None,
+        )
+        content = {}
+        for content_type, item in requests.items():
+            media = {}
+            schema = item.get('schema')
+            if schema is not None:
+                media['schema'] = to_openapi_schema(schema)
+            content[content_type] = media
+        result = {'content': content}
+        if description is not None:
+            result['description'] = description
+        return result
 
     def _dump_paths_response(self, handler):
         responses = {}
         if hasattr(handler, 'response') and len(handler.response) > 0:
             for code in handler.response:
-                responses[code] = {"content": {}}
+                content = {}
+                description = None
                 if isinstance(handler.response[code], list):
                     for item in handler.response[code]:
-                        responses[code]["content"].update(item.dump())
+                        dumped = item.dump()
+                        for content_type, media in dumped.items():
+                            description = description or media.get('description')
+                            content[content_type] = {
+                                'schema': to_openapi_schema(media['schema'])
+                            } if media.get('schema') is not None else {}
                         if item.model and item.model not in self.models:
                             self.models.append(item.model)
                 else:
-                    responses[code]["content"].update(handler.response[code].dump())
+                    dumped = handler.response[code].dump()
+                    for content_type, media in dumped.items():
+                        description = description or media.get('description')
+                        content[content_type] = {
+                            'schema': to_openapi_schema(media['schema'])
+                        } if media.get('schema') is not None else {}
                     if handler.response[code].model and handler.response[code].model not in self.models:
                         self.models.append(handler.response[code].model)
+                responses[str(code)] = {
+                    'description': description or f'Response {code}',
+                    'content': content,
+                }
+        if not responses:
+            return {'default': {'description': 'Default response'}}
         return responses
 
     def __call__(self, *args, handler=None, node=None, model: Model | None = None, tags: list | None = None,
