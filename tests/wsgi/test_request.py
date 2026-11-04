@@ -1,3 +1,4 @@
+import asyncio
 import io
 import os
 import asyncio
@@ -18,6 +19,10 @@ from muscles.asgi.asgi.request import RequestMaker
 
 def start_response(status, headers):
     pass
+
+
+def run_app(app, environ, start_response):
+    return asyncio.run(app.context.execute(environ=environ, start_response=start_response))
 
 
 class User(Model):
@@ -293,7 +298,7 @@ def test_send_json():
     })
 
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     muscular.api1.print_tree()
     for pr in app:
         assert pr == b'{"dd": "1", "json": {"j": 1}, ' \
@@ -324,7 +329,7 @@ def test_send_multipart():
     })
     muscular = Muscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'{"dd": "1", "json": {}, "forms": {"foo": "bar"}, ' \
                      b'"files": {"image": "FileStorage(\'image/jpeg\', \'6152749397.jpg\')"}, ' \
@@ -347,7 +352,7 @@ def test_send_form():
     })
     muscular = Muscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'{"dd": "1", "json": {}, "forms": {"dd": "1", "d2": ["2", "3"]}, "files": {}, ' \
                      b'"request": {"url": "http://localhost:8080/api/v1/test_request/1"}}'
@@ -370,7 +375,7 @@ def test_send_file():
     })
     muscular = Muscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'{"dd": "1", "raw": "FileStorage(\'image/jpeg\', None)", "forms": null, ' \
                      b'"files": null, "request": {"url": "http://localhost:8080/api/v1/test_request/1/raw"}}'

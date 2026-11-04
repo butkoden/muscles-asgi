@@ -1,3 +1,4 @@
+import asyncio
 import io
 from muscles import JsonResponseBody
 from muscles.asgi.asgi import AsgiStrategy, Request
@@ -9,6 +10,10 @@ from muscles import Configurator
 
 def start_response(status, headers):
     pass
+
+
+def run_app(app, environ, start_response):
+    return asyncio.run(app.context.execute(environ=environ, start_response=start_response))
 
 
 environ = {
@@ -206,7 +211,7 @@ def test_check_get_1():
         request.route['handler'] = call_test
 
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'CALL TEST 1'
 
@@ -216,7 +221,7 @@ def test_check_get_1():
         'PATH_INFO': '/api/v12/test',
         'CONTENT_TYPE': 'application/json',
     })
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'CALL TEST 2'
 
@@ -390,7 +395,7 @@ def test_check_get_2():
 
     muscular.context.strategy = AsgiStrategy
 
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'CALL TEST 3'
 
@@ -400,7 +405,7 @@ def test_check_get_2():
         'PATH_INFO': '/api/v22/test',
         'CONTENT_TYPE': 'application/json',
     })
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'CALL TEST 4'
 
@@ -562,7 +567,7 @@ def test_check_get_3():
 
     muscular.context.strategy = AsgiStrategy
 
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'{"actor": 1, "method": "GET", "request": {"url": "http://localhost:8080/api/v31/test"}}'
 
@@ -572,7 +577,7 @@ def test_check_get_3():
         'PATH_INFO': '/api/v32/test',
         'CONTENT_TYPE': 'application/json',
     })
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'{"actor": 1, "method": "GET", "request": {"url": "http://localhost:8080/api/v32/test"}}'
 

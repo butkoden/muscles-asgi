@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 import pytest
@@ -21,6 +22,10 @@ from muscles import Model, Column, Key, Numeric, List, String, Enum, Date, DateT
 
 def start_response(status, headers):
     pass
+
+
+def run_app(app, environ, start_response):
+    return asyncio.run(app.context.execute(environ=environ, start_response=start_response))
 
 
 environ = {
@@ -305,7 +310,7 @@ def test_check_swagger():
     })
     muscular = Muscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert len(pr) > 500
         html = pr.decode("utf-8")
@@ -327,7 +332,7 @@ def test_check_schema():
     })
     muscular = Muscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         pr = json.loads(pr)
         assert pr['info']['title'] == 'Api v1'
@@ -366,7 +371,7 @@ def test_check_schema_with_custom_openapi_version():
     })
     muscular = CustomOpenApiMuscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         schema = json.loads(pr)
         assert schema['openapi'] == '3.1.0'
@@ -413,7 +418,7 @@ def test_check_default_docs_and_openapi_endpoints():
     muscular = Muscular()
     muscular.api1.swagger.openapi_version = '3.0.3'
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     html = b''.join(app).decode("utf-8")
     assert '"urls.primaryName": "Api v1"' in html
 
@@ -423,7 +428,7 @@ def test_check_default_docs_and_openapi_endpoints():
         'PATH_INFO': '/openapi.json',
         'CONTENT_TYPE': 'application/json',
     })
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     schema = json.loads(b''.join(app))
     assert schema['info']['title'] == 'Api v1'
     assert schema['openapi'] == '3.0.3'

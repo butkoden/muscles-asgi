@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 import logging
@@ -30,6 +31,10 @@ class User(Model):
 
 def start_response(status, headers):
     pass
+
+
+def run_app(app, environ, start_response):
+    return asyncio.run(app.context.execute(environ=environ, start_response=start_response))
 
 
 class Muscular(metaclass=ApplicationMeta):
@@ -300,7 +305,7 @@ def test_check_instance():
     })
     muscular = Muscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'{"method": "GET", "request": {"url": "http://localhost:8080/api/v1/test"}}'
 
@@ -349,7 +354,7 @@ def test_check_instance():
         'PATH_INFO': '/api/v1/test2',
         'CONTENT_TYPE': 'application/json',
     })
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'{"method": "GET", "request": {"url": "http://localhost:8080/api/v1/test2"}}'
 
@@ -383,7 +388,7 @@ def test_check_get():
     })
     muscular = Muscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'{"method": "GET", "request": {"url": "http://localhost:8080/api/v1/test"}}'
 
@@ -401,7 +406,7 @@ def test_check_post():
     })
     muscular = Muscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         pr = json.loads(pr)
         assert pr['method'] == "POST"
@@ -420,7 +425,7 @@ def test_check_delete():
     })
     muscular = Muscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'{"method": "DELETE"}'
 
@@ -438,7 +443,7 @@ def test_check_put():
     })
     muscular = Muscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'{"method": "PUT"}'
 
@@ -456,7 +461,7 @@ def test_check_show():
     })
     muscular = Muscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'{"id": "1", "method": "GET", "request": {"url": "http://localhost:8080/api/v1/test/1"}}'
 
@@ -474,7 +479,7 @@ def test_check_change():
     })
     muscular = Muscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'{"id": "1", "method": "POST", "request": {"url": "http://localhost:8080/api/v1/test/1"}}'
 
@@ -492,6 +497,6 @@ def test_check_drop():
     })
     muscular = Muscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'{"id": "1", "method": "DELETE", "request": {"url": "http://localhost:8080/api/v1/test/1"}}'

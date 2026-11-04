@@ -1,3 +1,4 @@
+import asyncio
 import io
 
 from muscles import JsonResponseBody
@@ -18,6 +19,10 @@ from muscles import Model, Column, Key, Numeric, List, String, Enum, Date, DateT
 
 def start_response(status, headers):
     pass
+
+
+def run_app(app, environ, start_response):
+    return asyncio.run(app.context.execute(environ=environ, start_response=start_response))
 
 
 class User(Model):
@@ -292,7 +297,7 @@ def test_zero():
     """
     muscular = Muscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'{"method": "GET", "request": {"url": "http://localhost:8080/api/v1/test"}}'
 
@@ -309,7 +314,7 @@ def test_only_post():
     })
     muscular = Muscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'{"id": "1", "method": "POST", "request": {"url": "http://localhost:8080/api/v1/test/1"}}'
 
@@ -320,7 +325,7 @@ def test_only_post():
     })
     muscular = Muscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'{}'
 
@@ -339,6 +344,6 @@ def test_not_post():
     # with redirect_stdout(f):
     muscular = Muscular()
     muscular.context.strategy = AsgiStrategy
-    app = muscular(environ, start_response)
+    app = run_app(muscular, environ, start_response)
     for pr in app:
         assert pr == b'{}'
