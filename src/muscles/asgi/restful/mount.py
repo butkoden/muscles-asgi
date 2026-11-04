@@ -23,6 +23,8 @@ class _ProjectedRouteHandler:
         self.canonical_route = canonical_route
         self.aliases = [_normalize_path(alias) for alias in route_record.get("aliases", []) or []]
         self.actions = list(getattr(original_handler, "actions", []) or [])
+        self.permission = route_record.get("permission", getattr(original_handler, "permission", None))
+        self.permission_check = getattr(original_handler, "permission_check", "route")
 
 
 def mount_api(app: Any, api: Any):
@@ -32,6 +34,15 @@ def mount_api(app: Any, api: Any):
 
     for route_record in getattr(api, "nodes_map", []) or []:
         projected_handler = _ProjectedRouteHandler(route_record)
+        permission = projected_handler.permission
+        if permission is not None:
+            permission_id = permission if isinstance(permission, str) else getattr(permission, "id", None)
+            if not isinstance(permission_id, str) or permission_id not in registry.permissions:
+                raise ValueError(f"Unknown route permission: {permission_id!r}")
+            mode = getattr(route_record.get("handler"), "permission_check", "route")
+            if mode not in ("route", "business"):
+                raise ValueError(f"Invalid route permission check mode: {mode!r}")
+            projected_handler.permission = permission_id
         signature = _route_signature(projected_handler)
         if signature in existing_signatures:
             continue
@@ -46,6 +57,7 @@ def finalize_api(app: Any, api: Any):
 
 
 def mount_application_apis(app: Any):
+    get_application_registry(app).validate_permission_extensions()
     seen: set[int] = set()
     for api in _iter_application_apis(app):
         marker = id(api)

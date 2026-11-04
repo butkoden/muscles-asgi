@@ -1,5 +1,5 @@
 import hashlib
-from ..asgi.routers import routes
+from muscles.asgi.asgi.routers import routes
 import os
 import muscles.core
 

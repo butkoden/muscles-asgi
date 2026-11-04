@@ -13,8 +13,8 @@ from muscles.core import BackendPipeline
 from muscles.core import BaseResponse as CoreBaseResponse
 from muscles.core import normalize_path, normalize_problem_payload
 from .request import RequestMaker
-from .response import MakeResponse, BaseResponse, BadResponse, Response
-from .routers import routes, itinerary
+from .response import MakeResponse, BaseResponse, Response
+from muscles.asgi.asgi.routers import routes, itinerary
 from urllib.parse import unquote
 
 MAX_LINE = 64 * 1024
@@ -268,7 +268,12 @@ class AsgiServer:
             self.logger.exception("ASGI execute error")
             return self.send_error(ex)
 
-    def _to_protocol_response(self, response, request=None):
+    def _to_protocol_response(
+            self,
+            response,
+            request=None,
+            status=200,
+    ):
         if isinstance(response, BaseResponse):
             return response
 
@@ -279,31 +284,55 @@ class AsgiServer:
                 request=request,
                 content_type="application/problem+json",
             )
+
         if isinstance(response, BaseException) and hasattr(response, "status"):
             return BaseResponse(
                 status=getattr(response, "status"),
-                body=normalize_problem_payload(response, request=request, include_trace=self.debug),
+                body=normalize_problem_payload(
+                    response,
+                    request=request,
+                    include_trace=self.debug,
+                ),
                 request=request,
                 content_type="application/problem+json",
             )
 
         if isinstance(response, str):
-            return BaseResponse(status=200, body=response, request=request)
+            return BaseResponse(
+                status=status,
+                body=response,
+                request=request,
+                content_type="text/html; charset=utf-8",
+            )
+
         if isinstance(response, bytes):
-            return BaseResponse(status=200, body=response, request=request)
+            return BaseResponse(
+                status=status,
+                body=response,
+                request=request,
+                content_type="application/octet-stream",
+            )
+
         if isinstance(response, dict):
             return BaseResponse(
-                status=200,
-                body=BaseResponse(body=response, request=request).make_body(),
+                status=status,
+                body=BaseResponse(
+                    body=response,
+                    request=request,
+                ).make_body(),
                 request=request,
-                content_type='application/json; charset=utf-8',
+                content_type="application/json; charset=utf-8",
             )
+
         if isinstance(response, list):
             return BaseResponse(
-                status=200,
-                body=BaseResponse(body=response, request=request).make_body(),
+                status=status,
+                body=BaseResponse(
+                    body=response,
+                    request=request,
+                ).make_body(),
                 request=request,
-                content_type='application/json; charset=utf-8',
+                content_type="application/json; charset=utf-8",
             )
         if isinstance(response, CoreBaseResponse):
             if response.redirect:
@@ -320,7 +349,7 @@ class AsgiServer:
         # Legacy path: keep transport-native serialization behavior.
         if isinstance(response, tuple):
             kwargs = {}
-            status = 200
+            status = status
             if len(response) >= 1:
                 if isinstance(response[0], dict):
                     kwargs["body"] = BaseResponse(body=response[0], request=request).make_body()
@@ -336,7 +365,7 @@ class AsgiServer:
                 kwargs["headers"] = response[2]
             return BaseResponse(status=status, request=request, **kwargs)
         body = str(response) if isinstance(response, BaseException) else response
-        return BaseResponse(status=200, body=body, request=request)
+        return BaseResponse(status=status, body=body, request=request)
 
     async def handler(self, request):
         """
@@ -522,6 +551,16 @@ class AsgiServer:
             if route_node is not None:
                 matched.append(instance)
         return matched
+
+    def _apply_cors_to_error_response(self, response, request):
+        if request is None:
+            return response
+
+        for instance in self._matching_path_instances(request.path):
+            for middleware in getattr(instance, "get_middlewares", lambda: [])():
+                if getattr(middleware, "is_cors_middleware", False):
+                    response = middleware.apply(response, request)
+        return response
 
     def _runtime_instances(self):
         for _, instance in itinerary.instance_list():
@@ -728,12 +767,64 @@ class AsgiServer:
         # call = routes.get_current_error_handler(resp)
 
         if mapped_call:
-            response.body = mapped_call['handler'](response, request)
+            result = await self._maybe_await(
+                mapped_call['handler'](request, response)
+            )
+
+            if isinstance(result, BaseResponse):
+                response = result
+            else:
+                response = self._to_protocol_response(
+                    result,
+                    request=request,
+                    status=status
+                )
+
         else:
+            default_call = None
+
             for instance in self._runtime_instances():
                 call = instance.get_current_error_handler(response)
-                if call:
-                    response.body = call['handler'](response, request)
+
+                if not call:
+                    continue
+
+                # Сначала ищем handler конкретного HTTP-кода.
+                if call.get("code") == status:
+                    result = await self._maybe_await(
+                        call["handler"](request, response)
+                    )
+
+                    if isinstance(result, BaseResponse):
+                        response = result
+                    else:
+                        response = self._to_protocol_response(
+                            result,
+                            request=request,
+                            status=status,
+                        )
                     break
 
+                # Default сохраняем, но не используем пока
+                # не убедились, что конкретного handler нет.
+                if call.get("code") is None and default_call is None:
+                    default_call = call
+
+            else:
+                # Ни один конкретный handler не найден.
+                if default_call:
+                    result = await self._maybe_await(
+                        default_call["handler"](request, response)
+                    )
+
+                    if isinstance(result, BaseResponse):
+                        response = result
+                    else:
+                        response = self._to_protocol_response(
+                            result,
+                            request=request,
+                            status=status,
+                        )
+
+        response = self._apply_cors_to_error_response(response, request)
         return await self.__transport.make_response(response)

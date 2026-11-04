@@ -12,6 +12,8 @@ from muscles.core import GuestUser
 from muscles.core import Itinerary as CoreItinerary
 from muscles.core.schema.itinerary import Node as CoreNode
 from .error_handler import ForbiddenException
+from muscles.core import get_package
+from muscles.core import get_application
 
 
 class RouteRule(ABC):
@@ -110,14 +112,6 @@ class Itinerary(CoreItinerary):
     pass
 
 
-class Itinerary1(Itinerary):
-    """
-    Совместимый адаптер для легаси-импорта Itinerary1.
-    """
-
-    pass
-
-
 class Node(CoreNode):
     """
     Совместимый адаптер для легаси-импорта Node.
@@ -149,9 +143,65 @@ class Api(Itinerary):
         return response
 
 
+class PackageProxy:
+
+    def __init__(self, attribute):
+        self.attribute = attribute
+
+    def _get(self):
+        package = get_package()
+
+        if package is None:
+            raise RuntimeError(
+                "Package context is not initialized"
+            )
+
+        return getattr(
+            package,
+            self.attribute,
+        )
+
+    def __getattr__(self, name):
+        return getattr(
+            self._get(),
+            name,
+        )
+
+
+class ApplicationProxy:
+
+    def __init__(self, attribute):
+        self.attribute = attribute
+
+    def _get(self):
+        application = get_application()
+
+        if application is None:
+            raise RuntimeError(
+                "Application context is not initialized"
+            )
+
+        return getattr(
+            application,
+            self.attribute,
+        )
+
+    def __getattr__(self, name):
+        return getattr(
+            self._get(),
+            name,
+        )
+
 itinerary = Itinerary()
 routes = Routes()
 api = Api()
+
+package_routes = PackageProxy("routes")
+package_api = PackageProxy("api")
+
+application_routes = ApplicationProxy("routes")
+application_api = ApplicationProxy("api")
+
 
 routes.add_rule(RouteRuleDefault())
 routes.add_rule(RouteRuleVar())

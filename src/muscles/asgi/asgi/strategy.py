@@ -3,7 +3,12 @@ import io
 import logging
 from typing import Optional
 
-from muscles.core import BaseStrategy, resolve_telemetry
+from muscles.core import (
+    BaseStrategy,
+    resolve_telemetry,
+    set_application,
+    reset_application,
+)
 from watchdog.events import LoggingEventHandler
 from .server import AsgiTransport, AsgiServer
 from .error_handler import ResponseErrorHandler
@@ -19,40 +24,74 @@ class AsgiStrategy(BaseStrategy):
         self._server = None
         self._server_key = None
 
-    def execute(self, *args, error_handler: Optional[ResponseErrorHandler] = None, **kwargs):
-        """
-        Запускаем обработку запросов
-        :param args:
-        :param error_handler:
-        :param kwargs:
-        :return:
-        """
+    async def execute(
+            self,
+            *args,
+            error_handler: Optional[ResponseErrorHandler] = None,
+            **kwargs
+    ):
         host = kwargs.get('host', 'localhost')
         port = kwargs.get('port', 8080)
         logger = kwargs.get('logger')
         container = kwargs.get('container')
+
         if kwargs.get("otel_tracer") is None:
             kwargs["otel_tracer"] = resolve_telemetry(container)
+
         if logger is None and container is not None:
             logger = getattr(container, "logger", None)
+
         if isinstance(logger, str):
             logger = logging.getLogger(logger)
+
         if logger is None:
             logger = logging.getLogger("muscles.asgi")
+
         debug = bool(kwargs.get('debug', False))
 
-        server_key = (host, port, bool(debug), error_handler, id(logger))
-        if self._server is None or self._server_key != server_key:
-            self._server = AsgiServer(host, port, error_handler=error_handler, logger=logger, debug=debug)
-            self._server_key = server_key
-        server = self._server
-        transport = kwargs.get('transport', AsgiTransport)
-        server.init_transport(transport)
-        if 'environ' in kwargs and 'scope' not in kwargs:
-            return self._execute_wsgi_compatible(server, **kwargs)
-        return server.execute(*args, **kwargs)
+        server_key = (
+            host,
+            port,
+            bool(debug),
+            error_handler,
+            id(logger),
+        )
 
-    def _execute_wsgi_compatible(self, server, **kwargs):
+        if self._server is None or self._server_key != server_key:
+            self._server = AsgiServer(
+                host,
+                port,
+                error_handler=error_handler,
+                logger=logger,
+                debug=debug,
+            )
+            self._server_key = server_key
+
+        server = self._server
+
+        transport = kwargs.get(
+            'transport',
+            AsgiTransport,
+        )
+
+        server.init_transport(transport)
+
+        token = set_application(container)
+
+        try:
+            if 'environ' in kwargs and 'scope' not in kwargs:
+                return await self._execute_asgi_compatible(
+                    server,
+                    **kwargs,
+                )
+
+            return await server.execute(*args, **kwargs)
+
+        finally:
+            reset_application(token)
+
+
+    async def _execute_asgi_compatible(self, server, **kwargs):
         environ = kwargs['environ']
         start_response = kwargs.get('start_response')
         body = self._read_wsgi_body(environ)
@@ -69,20 +108,28 @@ class AsgiStrategy(BaseStrategy):
             sent.append(message)
 
         scope = self._scope_from_environ(environ)
-        asyncio.run(server.execute(scope=scope, receive=receive, send=send))
+
+        await server.execute(
+            scope=scope,
+            receive=receive,
+            send=send,
+        )
 
         status = 200
         headers = []
         chunks = []
+
         for message in sent:
             if message['type'] == 'http.response.start':
                 status = message.get('status', status)
                 headers = message.get('headers', headers)
+
             elif message['type'] == 'http.response.body':
                 chunks.append(message.get('body', b''))
 
         if start_response is not None:
             start_response(str(status), headers)
+
         return chunks
 
     def _read_wsgi_body(self, environ):

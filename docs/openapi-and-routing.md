@@ -100,7 +100,7 @@ The span includes safe framework and HTTP metadata:
 - `http.route`
 - `http.status_code`
 
-ASGI does not import `muscles_otel`. It only uses the neutral `span(...)`
+ASGI does not import `muscles.otel`. It only uses the neutral `span(...)`
 surface from core, so applications can use `muscles-otel` or another compatible
 provider.
 

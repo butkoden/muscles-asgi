@@ -152,3 +152,28 @@ def test_cors_preflight_response_for_matching_itinerary():
 
     assert response.status == 204
     assert response.headers["Access-Control-Allow-Origin"] == "https://app.example"
+
+
+def test_cors_headers_are_added_to_authentication_error_response():
+    itinerary = Itinerary(name="asgi-cors-error-response")
+    itinerary.add_rule(RouteRuleDefault())
+    itinerary.add("/api/profile", handler=lambda request: "ok", method="GET")
+    itinerary.use(cors(
+        allow_origins=["http://example.test"],
+        allow_headers=["Authorization", "Content-Type"],
+    ))
+    server = AsgiServer(host="localhost", port=0, error_handler=None)
+    request = Request(lambda request: "ok", path="/api/profile", method="GET")
+    request.origin = "http://example.test"
+    request.itinerary = itinerary
+    server._matching_path_instances = lambda path: [itinerary]
+
+    async def capture_response(response):
+        return response
+
+    server._AsgiServer__transport.make_response = capture_response
+    response = asyncio.run(server.send_error(ApplicationException(status=401, reason="Unauthorized"), request))
+
+    assert response.status == "401"
+    assert ("Access-Control-Allow-Origin", "http://example.test") in response.headers
+    assert ("Access-Control-Allow-Headers", "Authorization, Content-Type") in response.headers

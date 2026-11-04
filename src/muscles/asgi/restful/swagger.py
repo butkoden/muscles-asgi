@@ -180,7 +180,9 @@ class Swagger(Schema):
             handler_name = handler.__name__
             if not hasattr(handler, 'node'):
                 continue
-            full_route = self._external_path(handler.node.full_route)
+            full_route = self._external_path(
+                getattr(handler, 'full_route', None) or handler.node.full_route
+            )
             if full_route not in _handlers:
                 _handlers[full_route] = {}
             method = handler.method

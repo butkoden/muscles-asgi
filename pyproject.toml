@@ -5,12 +5,12 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "muscles-asgi"
-version = "1.0.2"
+version = "2.0.0"
 description = "Muscles ASGI runtime adapter for Web/API applications"
 readme = "README.md"
 authors = ["Denis B. <denis@butko.info>"]
 license = "MIT"
-packages = [{include = "muscles", from = "src"}]
+packages = [{include = "muscles/asgi", from = "src"}]
 
 [tool.poetry.urls]
 Homepage = "https://github.com/butkoden/muscles-asgi"

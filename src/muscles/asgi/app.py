@@ -41,7 +41,7 @@ class MuscularAsgiApp(metaclass=ApplicationMeta):
         return self.asgi.execute(*args, **kwargs, shutup=self.shutup)
 
 
-def asgi_app(app: MuscularAsgiApp, context: str | Context | None = None):
+def asgi_app(app: Any, context: str | Context | None = None):
     mount_application_apis(app)
 
     def _resolve_context():
@@ -54,17 +54,27 @@ def asgi_app(app: MuscularAsgiApp, context: str | Context | None = None):
             return selected
         if hasattr(app, 'asgi'):
             return getattr(app, 'asgi')
+        if hasattr(app, 'context'):
+            return getattr(app, 'context')
         raise TypeError("Application has no context 'asgi'")
 
     async def application(scope, receive, send):
         ctx = _resolve_context()
         set_container = getattr(ctx, "set_container", None)
+
         if callable(set_container):
             set_container(app)
-        execute_kwargs = {"scope": scope, "receive": receive, "send": send}
+
+        execute_kwargs = {
+            "scope": scope,
+            "receive": receive,
+            "send": send,
+        }
+
         telemetry = resolve_telemetry(app)
         if hasattr(telemetry, "span"):
             execute_kwargs["otel_tracer"] = telemetry
+
         result = ctx.execute(**execute_kwargs)
         if inspect.isawaitable(result):
             await result

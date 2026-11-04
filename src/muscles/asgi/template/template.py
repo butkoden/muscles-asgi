@@ -5,6 +5,8 @@ from jinja2.loaders import FileSystemLoader, PackageLoader, BaseLoader
 from jinja2.loaders import FunctionLoader, PrefixLoader
 from jinja2.exceptions import TemplateNotFound
 from jinja2.utils import internalcode
+import logging
+import os
 import typing as t
 from functools import wraps
 from ..assets import asset
@@ -16,6 +18,7 @@ if t.TYPE_CHECKING:
     from jinja2.ext import Extension
     from jinja2.loaders import BaseLoader
 
+logger = logging.getLogger(__name__)
 
 class TemplateLoader(BaseLoader):
     """
@@ -124,6 +127,12 @@ class TemplateLoader(BaseLoader):
         except TemplateNotFound as e:
             # re-raise the exception with the correct filename here.
             # (the one that includes the prefix)
+            searchpath = getattr(loader, "searchpath", [])
+            logger.error(
+                "Template not found: %s; searched: %s",
+                template,
+                [os.path.join(path, name) for path in searchpath],
+            )
             raise TemplateNotFound(template) from e
 
     @internalcode
@@ -371,6 +380,10 @@ class Template:
     def render(self, template, **params):
         tmpl = self.tpl.get_template(template)
         return tmpl.render(**params)
+
+    async def render_async(self, template, **params):
+        tmpl = self.tpl.get_template(template)
+        return await tmpl.render_async(**params)
 
     def string(self, string):
         return self.tpl.from_string(string)
