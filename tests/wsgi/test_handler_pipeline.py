@@ -154,6 +154,25 @@ def test_cors_preflight_response_for_matching_itinerary():
     assert response.headers["Access-Control-Allow-Origin"] == "https://app.example"
 
 
+def test_cors_preflight_uses_global_middleware_when_path_has_no_matching_route(monkeypatch):
+    itinerary = Itinerary(name="asgi-cors-global-preflight")
+    itinerary.use(cors(
+        allow_origins=["http://composiva.loc"],
+        allow_headers=["Authorization", "Content-Type"],
+    ))
+    server = AsgiServer(host="localhost", port=0, error_handler=Exception)
+    server._matching_path_instances = lambda path: []
+    monkeypatch.setattr("muscles.asgi.asgi.server.itinerary.instance_list", lambda: [(None, itinerary)])
+    request = Request(lambda request: "ok", path="/api/v1/accounts/profile", method="OPTIONS")
+    request.origin = "http://composiva.loc"
+
+    response = server._cors_preflight_response(request)
+
+    assert response.status == 204
+    assert response.headers["Access-Control-Allow-Origin"] == "http://composiva.loc"
+    assert response.headers["Access-Control-Allow-Headers"] == "Authorization, Content-Type"
+
+
 def test_cors_headers_are_added_to_authentication_error_response():
     itinerary = Itinerary(name="asgi-cors-error-response")
     itinerary.add_rule(RouteRuleDefault())

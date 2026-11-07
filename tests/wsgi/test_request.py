@@ -133,6 +133,24 @@ def test_request_maker_normalizes_path_and_keeps_query_string():
     assert request.query == {"page": "1"}
 
 
+def test_request_origin_reads_lowercase_asgi_header():
+    scope = {
+        "type": "http",
+        "method": "OPTIONS",
+        "scheme": "http",
+        "path": "/api/v1/accounts/login",
+        "raw_path": b"/api/v1/accounts/login",
+        "query_string": b"",
+        "headers": [(b"origin", b"http://composiva.loc")],
+        "server": ("api.composiva.loc", 80),
+        "client": ("127.0.0.1", 1234),
+    }
+
+    request = asyncio.run(RequestMaker(scope, _empty_receive).make())
+
+    assert request.origin == "http://composiva.loc"
+
+
 def test_request_url_helpers_are_runtime_safe():
     scope = {
         "type": "http",
