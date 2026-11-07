@@ -570,10 +570,22 @@ class AsgiServer:
     def _cors_preflight_response(self, request):
         if (request.method or "").upper() != "OPTIONS":
             return None
-        for instance in self._matching_path_instances(request.path):
-            for middleware in getattr(instance, "get_middlewares", lambda: [])():
-                if getattr(middleware, "is_cors_middleware", False):
-                    return middleware.preflight_response(request)
+        matching_instances = self._matching_path_instances(request.path)
+        middleware_items = [
+            middleware
+            for instance in matching_instances
+            for middleware in getattr(instance, "get_middlewares", lambda: [])()
+            if getattr(middleware, "is_cors_middleware", False)
+        ]
+        if not middleware_items:
+            middleware_items = [
+                middleware
+                for _, instance in itinerary.instance_list()
+                for middleware in getattr(instance, "get_middlewares", lambda: [])()
+                if getattr(middleware, "is_cors_middleware", False)
+            ]
+        for middleware in middleware_items:
+            return middleware.preflight_response(request)
         return None
 
     def _resolve_route(self, request):
